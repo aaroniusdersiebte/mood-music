@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mood Music - OBS Display</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: transparent;
+            overflow: hidden;
+            width: 400px;
+            height: 120px;
+        }
+
+        .song-display {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .song-display.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(20px) brightness(0.3);
+            transform: scale(1.1);
+        }
+
+        .mood-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.6;
+            mix-blend-mode: overlay;
+        }
+
+        .content {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            height: 100%;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+        }
+
+        .cover {
+            width: 80px;
+            height: 80px;
+            border-radius: 8px;
+            overflow: hidden;
+            flex-shrink: 0;
+            background: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .cover-placeholder {
+            color: #666;
+            font-size: 24px;
+        }
+
+        .info {
+            margin-left: 16px;
+            color: white;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .artist {
+            font-size: 14px;
+            opacity: 0.8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .mood-indicator {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            color: white;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.6; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+        }
+
+        @keyframes waver {
+            0%, 100% { transform: scale(1) rotate(0deg); }
+            50% { transform: scale(1.02) rotate(0.5deg); }
+        }
+
+        .pulse-slow { animation: pulse 2.5s ease-in-out infinite; }
+        .pulse-fast { animation: pulse 0.5s ease-in-out infinite; }
+        .pulse-medium { animation: pulse 1.5s ease-in-out infinite; }
+        .waver-slow { animation: waver 3s ease-in-out infinite; }
+        .waver-fast { animation: waver 1s ease-in-out infinite; }
+
+        .no-song {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            border: 2px dashed #444;
+        }
+    </style>
+</head>
+<body>
+    <div id="songDisplay" class="song-display">
+        <div id="background" class="background"></div>
+        <div id="moodOverlay" class="mood-overlay"></div>
+        <div class="content">
+            <div class="cover">
+                <img id="coverImage" src="" alt="Album Cover" style="display: none;">
+                <div id="coverPlaceholder" class="cover-placeholder">♪</div>
+            </div>
+            <div class="info">
+                <div id="songTitle" class="title">No Song Playing</div>
+                <div id="artistName" class="artist">Start Mood Music app</div>
+            </div>
+        </div>
+        <div id="moodIndicator" class="mood-indicator" style="display: none;"></div>
+    </div>
+
+    <div id="noSong" class="no-song" style="display: none;">
+        <div>🎵 Waiting for Mood Music...</div>
+    </div>
+
+    <script>
+        let lastUpdateTime = 0;
+        let hideTimeout = null;
+
+        function loadFromStorage() {
+            try {
+                const data = sessionStorage.getItem('obs-current-data');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    
+                    // Check if data is recent (within last 30 seconds)
+                    const now = Date.now();
+                    if (parsed.timestamp && (now - parsed.timestamp) < 30000) {
+                        if (parsed.song && parsed.mood) {
+                            updateDisplay(parsed);
+                            return true;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.log('Error loading from storage:', error);
+            }
+            return false;
+        }
+
+        function updateDisplay(data) {
+            const { song, mood, settings } = data;
+            
+            if (!song || !mood) {
+                hideDisplay();
+                return;
+            }
+
+            // Hide "no song" message
+            document.getElementById('noSong').style.display = 'none';
+
+            // Update content
+            document.getElementById('songTitle').textContent = song.title || 'Unknown Title';
+            document.getElementById('artistName').textContent = song.artist || 'Unknown Artist';
+            
+            // Update cover
+            const coverImg = document.getElementById('coverImage');
+            const coverPlaceholder = document.getElementById('coverPlaceholder');
+            
+            if (song.cover) {
+                coverImg.src = song.cover;
+                coverImg.style.display = 'block';
+                coverPlaceholder.style.display = 'none';
+                document.getElementById('background').style.backgroundImage = 'url(' + song.cover + ')';
+            } else {
+                coverImg.style.display = 'none';
+                coverPlaceholder.style.display = 'flex';
+                document.getElementById('background').style.backgroundImage = 'none';
+            }
+
+            // Update mood styling
+            const moodOverlay = document.getElementById('moodOverlay');
+            const moodIndicator = document.getElementById('moodIndicator');
+            
+            if (mood.color) {
+                moodOverlay.style.background = 'linear-gradient(135deg, ' + mood.color + '40, ' + mood.color + '20)';
+                moodIndicator.style.background = mood.color + '40';
+            }
+            
+            moodIndicator.textContent = mood.name;
+            moodIndicator.style.display = 'block';
+
+            // Apply animation based on mood settings
+            const display = document.getElementById('songDisplay');
+            
+            // Reset overlay classes
+            moodOverlay.className = 'mood-overlay';
+            
+            // Apply pulse animation based on mood settings
+            if (mood.intensity === 'extreme' && mood.pulseSpeed < 1) {
+                moodOverlay.classList.add('pulse-fast');
+            } else if (mood.pulseSpeed > 2) {
+                moodOverlay.classList.add('pulse-slow');
+            } else {
+                moodOverlay.classList.add('pulse-medium');
+            }
+
+            showDisplay();
+
+            // Handle auto-hide
+            if (settings && settings.obsDisplayDuration && !settings.obsAlwaysShow) {
+                if (hideTimeout) {
+                    clearTimeout(hideTimeout);
+                }
+                hideTimeout = setTimeout(() => {
+                    hideDisplay();
+                }, settings.obsDisplayDuration);
+            } else if (hideTimeout) {
+                clearTimeout(hideTimeout);
+                hideTimeout = null;
+            }
+
+            lastUpdateTime = Date.now();
+        }
+
+        function showDisplay() {
+            document.getElementById('songDisplay').classList.add('visible');
+            document.getElementById('songDisplay').style.display = 'block';
+            document.getElementById('noSong').style.display = 'none';
+        }
+
+        function hideDisplay() {
+            document.getElementById('songDisplay').classList.remove('visible');
+        }
+
+        function showNoSongMessage() {
+            document.getElementById('songDisplay').style.display = 'none';
+            document.getElementById('noSong').style.display = 'flex';
+        }
+
+        function checkForUpdates() {
+            const hasData = loadFromStorage();
+            
+            // If no recent data and no song showing, show waiting message
+            if (!hasData && (Date.now() - lastUpdateTime) > 10000) {
+                showNoSongMessage();
+            }
+        }
+
+        // Initial check
+        const hasInitialData = loadFromStorage();
+        if (!hasInitialData) {
+            showNoSongMessage();
+        }
+
+        // Check for updates every 2 seconds
+        setInterval(checkForUpdates, 2000);
+
+        // Listen for storage events from other tabs/windows
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'obs-current-data') {
+                loadFromStorage();
+            }
+        });
+
+        // Listen for custom events
+        window.addEventListener('obs-update', function(e) {
+            updateDisplay(e.detail);
+        });
+
+        console.log('Mood Music OBS Display ready');
+        console.log('Add this file as Browser Source in OBS (400x120)');
+    </script>
+</body>
+</html>

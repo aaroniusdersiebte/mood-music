@@ -1,0 +1,85 @@
+{
+  "name": "mood-music",
+  "version": "1.0.0",
+  "description": "Mood-based music player for streaming with OBS integration",
+  "main": "public/electron.js",
+  "homepage": "./",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "electron": "electron .",
+    "electron-dev": "ELECTRON_IS_DEV=true electron .",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "howler": "^2.2.3",
+    "zustand": "^4.4.7",
+    "framer-motion": "^10.16.4",
+    "lucide-react": "^0.263.1",
+    "@tailwindcss/forms": "^0.5.6",
+    "electron-is-dev": "^2.0.0",
+    "midi": "^2.0.0",
+    "obs-websocket-js": "^5.0.5",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "electron": "^26.6.1",
+    "electron-builder": "^24.6.4",
+    "tailwindcss": "^3.3.5",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31",
+    "@types/howler": "^2.2.9"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "build": {
+    "appId": "com.moodmusic.app",
+    "productName": "Mood Music",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "build/**/*",
+      "public/electron.js",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "icon": "public/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "mac": {
+      "icon": "public/icon.icns",
+      "category": "public.app-category.music"
+    },
+    "linux": {
+      "icon": "public/icon.png",
+      "category": "AudioVideo"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
