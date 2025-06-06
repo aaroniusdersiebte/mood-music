@@ -40,6 +40,28 @@ const useMoodStore = create(
         obsAlwaysShow: false,
         autoBackup: true,
         backupInterval: 300000, // 5 minutes
+        
+        // OBS WebSocket Settings
+        obsWebSocketEnabled: false,
+        obsWebSocketHost: 'localhost',
+        obsWebSocketPort: 4455,
+        obsWebSocketPassword: '',
+        
+        // OBS Song Display Settings
+        obsSongTextSource: 'Current Song',
+        obsSongTemplate: 'Now Playing: {title}\nArtist: {artist}\nMood: {mood}',
+        obsAlwaysShow: false,
+        
+        // MIDI Settings
+        midiEnabled: false,
+        midiInputDevice: '',
+        midiOutputDevice: '',
+        midiMappings: {},
+        
+        // Audio Settings
+        audioVisualizationEnabled: true,
+        audioSmoothingFactor: 0.1,
+        peakHoldTime: 1000, // ms
       },
       
       // Actions

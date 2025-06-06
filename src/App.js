@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import useMoodStore from './stores/moodStore';
 import audioService from './services/audioService';
 import obsService from './services/obsService';
+import obsWebSocketService from './services/obsWebSocketService';
+import midiService from './services/midiService';
 import fileUtils from './utils/fileUtils';
 
 // Components
@@ -11,6 +13,8 @@ import MoodGrid from './components/MoodGrid';
 import Player from './components/Player';
 import Settings from './components/Settings';
 import LoadingScreen from './components/LoadingScreen';
+import AudioMixer from './components/AudioMixer';
+import MIDIMapping from './components/MIDIMapping';
 
 // Styles
 import './App.css';
@@ -25,12 +29,65 @@ function App() {
     settings,
     setIsPlaying,
     setCurrentSong,
+    setActiveMood,
     nextSong,
     updateSettings
   } = useMoodStore();
 
   const [currentView, setCurrentView] = useState('moods');
   const [isLoading, setIsLoading] = useState(true);
+
+  // MIDI Hotkey Handler
+  const handleMIDIHotkey = (data) => {
+    const { action, target } = data;
+    
+    switch (action) {
+      case 'playPause':
+        setIsPlaying(!isPlaying);
+        break;
+      case 'nextSong':
+        nextSong();
+        break;
+      case 'prevSong':
+        // Add prevSong to store if needed
+        console.log('Previous song triggered via MIDI');
+        break;
+      case 'shuffle':
+        // Add shuffle toggle to store if needed
+        console.log('Shuffle toggled via MIDI');
+        // Could implement shuffle toggle here if needed
+        break;
+      case 'moodSwap':
+        // Switch to specific mood
+        const targetMood = moods.find(m => m.id === target || m.name.toLowerCase() === target?.toLowerCase());
+        if (targetMood) {
+          setActiveMood(targetMood.id);
+          console.log(`Switched to mood: ${targetMood.name}`);
+        } else {
+          console.log(`Mood not found: ${target}`);
+        }
+        break;
+      case 'soundEffect':
+        console.log('Sound effect triggered via MIDI:', target);
+        // Add sound effect logic if needed
+        break;
+      default:
+        console.log('Unknown MIDI hotkey:', action);
+    }
+  };
+
+  // Listen for custom MIDI events from components
+  useEffect(() => {
+    const handleCustomMIDIEvent = (event) => {
+      handleMIDIHotkey(event.detail);
+    };
+    
+    window.addEventListener('midiHotkey', handleCustomMIDIEvent);
+    
+    return () => {
+      window.removeEventListener('midiHotkey', handleCustomMIDIEvent);
+    };
+  }, [isPlaying, moods]);
 
   // Initialize app
   useEffect(() => {
@@ -39,12 +96,42 @@ function App() {
         // Ensure data directories exist
         await fileUtils.ensureDataDirectories();
         
+        // Initialize MIDI first (globally)
+        if (settings.midiEnabled) {
+          try {
+            console.log('App: Initializing MIDI globally...');
+            await midiService.initialize();
+            
+            // Setup MIDI hotkey handlers
+            midiService.onHotkeyAction((data) => {
+              handleMIDIHotkey(data);
+            });
+            
+            console.log('App: MIDI Service initialized globally');
+          } catch (error) {
+            console.log('App: MIDI not available:', error.message);
+          }
+        }
+        
         // Start OBS service if configured
         if (settings.obsPort) {
           try {
             await obsService.startServer(settings.obsPort);
           } catch (error) {
             console.log('OBS service not available:', error.message);
+          }
+        }
+
+        // Initialize OBS WebSocket if enabled
+        if (settings.obsWebSocketEnabled) {
+          try {
+            await obsWebSocketService.connect(
+              settings.obsWebSocketHost,
+              settings.obsWebSocketPort,
+              settings.obsWebSocketPassword
+            );
+          } catch (error) {
+            console.log('OBS WebSocket not available:', error.message);
           }
         }
 
@@ -79,8 +166,10 @@ function App() {
       audioService.destroy();
       try {
         obsService.stopServer();
+        obsWebSocketService.destroy();
+        // Don't destroy MIDI service as it's used globally
       } catch (error) {
-        console.log('Error stopping OBS service:', error.message);
+        console.log('Error during cleanup:', error.message);
       }
     };
   }, []);
@@ -88,26 +177,30 @@ function App() {
   // Handle song changes
   useEffect(() => {
     if (currentSong) {
-      audioService.loadSong(currentSong)
-        .then(() => {
+      const handleSongChange = async () => {
+        try {
+          await audioService.loadSong(currentSong);
+          
           if (isPlaying) {
             audioService.play();
           }
           
-          // Update OBS display
+          // Update OBS display via WebSocket
           const currentMood = moods.find(m => m.id === activeMood);
-          if (currentMood) {
+          if (currentMood && settings.obsWebSocketEnabled) {
             try {
-              obsService.updateCurrentSong(currentSong, currentMood, settings);
+              await obsWebSocketService.updateSongDisplay(currentSong, currentMood, settings);
             } catch (error) {
-              console.log('Failed to update OBS:', error.message);
+              console.log('Failed to update OBS song display:', error.message);
             }
           }
-        })
-        .catch(error => {
+        } catch (error) {
           console.error('Failed to load song:', error);
           setIsPlaying(false);
-        });
+        }
+      };
+      
+      handleSongChange();
     }
   }, [currentSong]);
 
@@ -149,6 +242,8 @@ function App() {
             className="flex-1 overflow-hidden"
           >
             {currentView === 'moods' && <MoodGrid />}
+            {currentView === 'audio' && <AudioMixer />}
+            {currentView === 'midi' && <MIDIMapping />}
             {currentView === 'settings' && <Settings />}
           </motion.div>
         </AnimatePresence>

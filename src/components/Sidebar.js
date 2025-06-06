@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Music, Settings, Grid, Volume2 } from 'lucide-react';
+import { Music, Settings, Grid, Volume2, Sliders, Gamepad2 } from 'lucide-react';
 import useMoodStore from '../stores/moodStore';
 
 const Sidebar = ({ currentView, onViewChange }) => {
@@ -12,6 +12,18 @@ const Sidebar = ({ currentView, onViewChange }) => {
       label: 'Moods',
       icon: Grid,
       description: 'Manage your music moods'
+    },
+    {
+      id: 'audio',
+      label: 'Audio Mixer',
+      icon: Sliders,
+      description: 'OBS audio control & levels'
+    },
+    {
+      id: 'midi',
+      label: 'MIDI Mapping',
+      icon: Gamepad2,
+      description: 'Configure MIDI controller'
     },
     {
       id: 'settings',
