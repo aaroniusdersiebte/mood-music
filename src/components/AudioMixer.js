@@ -1,239 +1,251 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Volume2, VolumeX, Mic, Monitor, Headphones, Power, Activity, Eye, EyeOff, Settings } from 'lucide-react';
-import obsWebSocketService from '../services/obsWebSocketService';
-import midiService from '../services/midiService';
+import { Volume2, VolumeX, Mic, Monitor, Headphones, Power, Activity, Eye, EyeOff, Settings, TestTube, Bug } from 'lucide-react';
+import globalStateService from '../services/globalStateService';
 import useMoodStore from '../stores/moodStore';
+import AudioLevelMeter from './AudioLevelMeter';
 
 const AudioMixer = () => {
   const { settings } = useMoodStore();
+  
+  // Use global state instead of local state
   const [audioSources, setAudioSources] = useState([]);
   const [audioLevels, setAudioLevels] = useState({});
+  const [realTimeAudioLevels, setRealTimeAudioLevels] = useState({});
   const [connected, setConnected] = useState(false);
   const [midiConnected, setMidiConnected] = useState(false);
-  const [lastMIDIActivity, setLastMIDIActivity] = useState(null);
+  const [lastMIDIMessage, setLastMIDIMessage] = useState(null);
   const [hiddenSources, setHiddenSources] = useState(new Set());
   const [showHiddenSources, setShowHiddenSources] = useState(false);
-  const [learningMidi, setLearningMidi] = useState(null); // { sourceName: string, type: 'volume' | 'mute' }
-  const [sourceMidiMappings, setSourceMidiMappings] = useState({}); // sourceName -> { volume: midiKey, mute: midiKey }
+  const [learningMidi, setLearningMidi] = useState(null);
+  const [sourceMidiMappings, setSourceMidiMappings] = useState({});
+  const [draggedSlider, setDraggedSlider] = useState(null);
+  
+  // 🧪 Debug State
+  const [debugMode, setDebugMode] = useState(false);
+  const [testMode, setTestMode] = useState(false);
+  const [debugInfo, setDebugInfo] = useState({});
+  const debugLogCountRef = useRef(0);
 
   useEffect(() => {
-    // Setup OBS WebSocket callbacks
-    obsWebSocketService.onConnected(() => {
-      setConnected(true);
-      console.log('AudioMixer: OBS connected');
-      // Auto-refresh sources when connected
-      setTimeout(() => {
-        refreshSources();
-      }, 1000);
-    });
-
-    obsWebSocketService.onDisconnected(() => {
-      setConnected(false);
-      setAudioSources([]);
-      setAudioLevels({});
-      console.log('AudioMixer: OBS disconnected');
-    });
-
-    obsWebSocketService.onSourcesDiscovered((sources) => {
-      console.log('AudioMixer: Sources discovered:', sources.length, sources);
-      setAudioSources(sources);
-    });
-
-    obsWebSocketService.onAudioLevels((data) => {
-      // Less verbose logging for audio levels
-      if (Math.max(data.levels.left, data.levels.right) > -50) {
-        console.log('AudioMixer: Audio levels received for', data.sourceName, ':', data.levels);
-      }
-      setAudioLevels(prev => ({
-        ...prev,
-        [data.sourceName]: data.levels
-      }));
-    });
-
-    obsWebSocketService.onVolumeChanged((data) => {
-      console.log('AudioMixer: Volume changed:', data);
-      setAudioSources(prev => 
-        prev.map(source => 
-          source.name === data.sourceName 
-            ? { ...source, volumeDb: data.volumeDb, volume: data.volume }
-            : source
-        )
-      );
-    });
-
-    obsWebSocketService.onMuteChanged((data) => {
-      console.log('AudioMixer: Mute changed:', data);
-      setAudioSources(prev => 
-        prev.map(source => 
-          source.name === data.sourceName 
-            ? { ...source, muted: data.muted }
-            : source
-        )
-      );
-    });
-
-    // Setup MIDI callbacks
-    midiService.onVolumeChange((data) => {
-      handleMIDIVolumeChange(data);
-    });
-
-    midiService.onHotkeyAction((data) => {
-      handleMIDIHotkeyAction(data);
-    });
-
-    midiService.onMIDIMessage((message) => {
-      setLastMIDIActivity({
-        ...message,
-        timestamp: Date.now()
-      });
-    });
-  }, []); 
-
-  useEffect(() => {
-    // Check initial connection states
-    setConnected(obsWebSocketService.isConnected());
+    console.log('AudioMixer: Initializing with GlobalStateService');
     
-    // Only initialize MIDI if not already initialized
-    if (!midiConnected) {
-      initializeMIDI();
-    }
-
-    // Load Audio Mixer specific mappings
-    loadAudioMixerMappings();
-
-    // Cleanup function
-    return () => {
-      // Don't destroy services here as they're used by other components
-    };
-  }, []);
-
-  const initializeMIDI = async () => {
-    try {
-      // Check if MIDI is already initialized
-      if (midiService.midiAccess || midiService.connected) {
-        console.log('MIDI already initialized, skipping...');
-        setMidiConnected(true);
-        return;
-      }
+    // Load initial state from GlobalStateService
+    const obsState = globalStateService.getOBSState();
+    const midiState = globalStateService.getMIDIState();
+    const audioMappings = globalStateService.getAudioSourceMappings();
+    
+    setConnected(obsState.connected);
+    setAudioSources(obsState.sources);
+    setAudioLevels(obsState.audioLevels);
+    setMidiConnected(midiState.connected);
+    setLastMIDIMessage(midiState.lastActivity);
+    setSourceMidiMappings(audioMappings);
+    
+    console.log('AudioMixer: Initial state loaded:', {
+      obsConnected: obsState.connected,
+      sourcesCount: obsState.sources.length,
+      midiConnected: midiState.connected,
+      mappingsCount: Object.keys(audioMappings).length
+    });
+    
+    // Subscribe to global state changes
+    const handleOBSStateChange = (newState) => {
+      console.log('AudioMixer: OBS state changed:', newState);
+      setConnected(newState.connected);
+      setAudioSources(newState.sources);
+      setAudioLevels(newState.audioLevels);
       
-      await midiService.initialize();
-      setMidiConnected(true);
-      console.log('AudioMixer: MIDI Service initialized');
-    } catch (error) {
-      console.error('AudioMixer: MIDI initialization failed:', error);
-      setMidiConnected(false);
-    }
-  };
-
-  // Load Audio Mixer specific mappings from localStorage
-  const loadAudioMixerMappings = () => {
-    try {
-      const stored = localStorage.getItem('audioMixerMappings');
-      if (stored) {
-        const mappings = JSON.parse(stored);
-        console.log('AudioMixer: Loading source mappings:', mappings);
-        setSourceMidiMappings(mappings);
+      // WICHTIG: Update realTimeAudioLevels aus dem OBS State
+      if (newState.realTimeAudioLevels) {
+        const levelsObj = {};
+        if (newState.realTimeAudioLevels instanceof Map) {
+          newState.realTimeAudioLevels.forEach((value, key) => {
+            levelsObj[key] = value;
+          });
+        } else {
+          Object.assign(levelsObj, newState.realTimeAudioLevels);
+        }
+        setRealTimeAudioLevels(levelsObj);
+        
+        // Debug: Log erste 3 Updates (mit useRef statt this)
+        if (debugLogCountRef.current === undefined) debugLogCountRef.current = 0;
+        if (debugLogCountRef.current < 3) {
+          console.log('🎵 AudioMixer: Updated realTimeAudioLevels:', Object.keys(levelsObj));
+          debugLogCountRef.current++;
+        }
       }
-    } catch (error) {
-      console.error('AudioMixer: Failed to load source mappings:', error);
+    };
+    
+    const handleAudioLevelsUpdate = (data) => {
+      // 🎵 Real-time audio level updates für Visualisierung
+      if (data.allLevels) {
+        setRealTimeAudioLevels(data.allLevels);
+        
+        // 🧪 Debug Info Update
+        if (debugMode) {
+          setDebugInfo(prev => ({
+            ...prev,
+            lastAudioUpdate: Date.now(),
+            audioSourcesWithData: Object.keys(data.allLevels).length,
+            totalAudioEvents: (prev.totalAudioEvents || 0) + 1
+          }));
+        }
+      }
+    };
+    
+    const handleSourceVolumeUpdate = (data) => {
+      console.log('AudioMixer: Source volume updated:', data);
+      
+      if (draggedSlider !== data.sourceName) {
+        setAudioSources(prevSources => 
+          prevSources.map(source => 
+            source.name === data.sourceName 
+              ? { ...source, volumeDb: data.volumeDb, volume: data.volume }
+              : source
+          )
+        );
+      }
+    };
+    
+    const handleMIDIStateChange = (newState) => {
+      console.log('AudioMixer: MIDI state changed:', newState);
+      setMidiConnected(newState.connected);
+      setLastMIDIMessage(newState.lastActivity);
+    };
+    
+    const handleMappingsChange = (data) => {
+      if (data.type === 'audio') {
+        console.log('AudioMixer: Audio mappings changed:', data.mappings);
+        setSourceMidiMappings(data.mappings);
+      }
+    };
+    
+    const handleMIDILearningCompleted = (data) => {
+      console.log('AudioMixer: MIDI learning completed globally:', data);
+      if (learningMidi) {
+        const { sourceName, type } = learningMidi;
+        const midiKey = data.message.note.toString();
+        
+        console.log(`AudioMixer: Creating ${type} mapping for ${sourceName}: CC${midiKey}`);
+        
+        setSourceMidiMappings(prev => ({
+          ...prev,
+          [sourceName]: {
+            ...prev[sourceName],
+            [type]: midiKey
+          }
+        }));
+        
+        globalStateService.setAudioSourceMapping(sourceName, type, midiKey);
+        
+        if (type === 'volume') {
+          const mapping = {
+            type: 'volume',
+            target: sourceName,
+            min: 0,
+            max: 127
+          };
+          console.log(`AudioMixer: Setting volume MIDI mapping:`, mapping);
+          globalStateService.setMIDIMapping(midiKey, mapping, 'AudioMixer');
+        } else if (type === 'mute') {
+          const mapping = {
+            type: 'hotkey',
+            action: 'mute',
+            target: sourceName
+          };
+          console.log(`AudioMixer: Setting mute MIDI mapping:`, mapping);
+          globalStateService.setMIDIMapping(midiKey, mapping, 'AudioMixer');
+        }
+        
+        setLearningMidi(null);
+      }
+    };
+    
+    const handleMIDILearningStopped = () => {
+      console.log('AudioMixer: MIDI learning stopped globally');
+      setLearningMidi(null);
+    };
+    
+    // Register callbacks
+    globalStateService.on('obsStateChanged', handleOBSStateChange);
+    globalStateService.on('midiStateChanged', handleMIDIStateChange);
+    globalStateService.on('mappingsChanged', handleMappingsChange);
+    globalStateService.on('midiLearningCompleted', handleMIDILearningCompleted);
+    globalStateService.on('midiLearningStopped', handleMIDILearningStopped);
+    globalStateService.on('audioLevelsUpdated', handleAudioLevelsUpdate);
+    globalStateService.on('sourceVolumeUpdated', handleSourceVolumeUpdate);
+    
+    // Cleanup
+    return () => {
+      globalStateService.off('obsStateChanged', handleOBSStateChange);
+      globalStateService.off('midiStateChanged', handleMIDIStateChange);
+      globalStateService.off('mappingsChanged', handleMappingsChange);
+      globalStateService.off('midiLearningCompleted', handleMIDILearningCompleted);
+      globalStateService.off('midiLearningStopped', handleMIDILearningStopped);
+      globalStateService.off('audioLevelsUpdated', handleAudioLevelsUpdate);
+      globalStateService.off('sourceVolumeUpdated', handleSourceVolumeUpdate);
+    };
+  }, [learningMidi, draggedSlider, debugMode]);
+
+  // 🧪 Test Functions
+  const testAudioVisualization = () => {
+    console.log('🧪 Testing audio visualization...');
+    setTestMode(true);
+    
+    // Force test für OBS Service
+    const obsService = globalStateService.services.obs;
+    if (obsService && obsService.forceAudioLevelTest) {
+      obsService.forceAudioLevelTest();
+    }
+    
+    // Stoppe Test nach 10 Sekunden
+    setTimeout(() => {
+      setTestMode(false);
+      console.log('🧪 Audio visualization test completed');
+    }, 10000);
+  };
+
+  const testOBSConnection = async () => {
+    console.log('🧪 Testing OBS connection...');
+    const obsService = globalStateService.services.obs;
+    if (obsService) {
+      try {
+        const version = await obsService.testConnection();
+        if (version) {
+          console.log('✅ OBS connection test successful:', version);
+          await obsService.testEventSubscription();
+        }
+      } catch (error) {
+        console.error('❌ OBS connection test failed:', error);
+      }
     }
   };
 
-  // Save Audio Mixer specific mappings to localStorage
-  const saveAudioMixerMappings = (mappings) => {
-    try {
-      localStorage.setItem('audioMixerMappings', JSON.stringify(mappings));
-      console.log('AudioMixer: Saved source mappings:', mappings);
-    } catch (error) {
-      console.error('AudioMixer: Failed to save source mappings:', error);
-    }
-  };
-
-  const handleMIDIVolumeChange = async (data) => {
-    const { target, value, midiValue, dbValue } = data;
+  const debugOBSEvents = () => {
+    console.log('🔧 Debugging OBS events...');
+    console.log('=== AUDIO MIXER DEBUG INFO ===');
+    console.log('Connected:', connected);
+    console.log('Audio Sources (Total):', audioSources.length);
+    console.log('Real-time Audio Levels (Keys):', Object.keys(realTimeAudioLevels));
+    console.log('Real-time Audio Levels (Count):', Object.keys(realTimeAudioLevels).length);
     
-    console.log('AudioMixer: MIDI Volume Control received:', data);
+    // Detaillierte Source-Analyse
+    console.log('\n--- DETAILED SOURCE ANALYSIS ---');
+    audioSources.forEach(source => {
+      const hasAudioData = realTimeAudioLevels[source.name];
+      const audioInfo = hasAudioData ? 
+        `L:${hasAudioData.left?.toFixed(1)}dB R:${hasAudioData.right?.toFixed(1)}dB ${hasAudioData.isReal ? '(REAL)' : '(TEST)'}` : 
+        'NO DATA';
+      console.log(`🎵 ${source.name}: ${audioInfo}`);
+    });
     
-    // Check if we're connected to OBS
-    if (!connected) {
-      console.log('AudioMixer: Not connected to OBS, skipping volume control');
-      return;
-    }
+    console.log('\n--- GLOBAL STATE SERVICE DATA ---');
+    const obsState = globalStateService.getOBSState();
+    console.log('OBS State Audio Levels Keys:', Object.keys(obsState.audioLevels || {}));
+    console.log('OBS State realTimeAudioLevels size:', obsState.realTimeAudioLevels?.size || 0);
     
-    // For direct source names (from AudioMixer learning)
-    let sourceName = target;
-    
-    // If it's an application name, map it to OBS source
-    if (['master', 'desktop', 'mic', 'discord', 'browser', 'game', 'music', 'alert'].includes(target)) {
-      sourceName = obsWebSocketService.mapApplicationToSource(target);
-    }
-    
-    console.log(`AudioMixer: Trying to set volume for source: ${sourceName} to ${value}dB`);
-    
-    // Try to find the exact source name from our sources list
-    const exactSource = audioSources.find(source => 
-      source.name === sourceName || 
-      source.name.toLowerCase().includes(sourceName.toLowerCase())
-    );
-    
-    if (exactSource) {
-      sourceName = exactSource.name;
-      console.log(`AudioMixer: Using exact source name: ${sourceName}`);
-    }
-    
-    // Set volume in OBS
-    const success = await obsWebSocketService.setVolume(sourceName, value);
-    
-    if (success) {
-      console.log(`AudioMixer: MIDI Volume Control successful: ${sourceName} -> ${value}dB`);
-    } else {
-      console.error(`AudioMixer: MIDI Volume Control failed for: ${sourceName}`);
-    }
-  };
-
-  const handleMIDIHotkeyAction = async (data) => {
-    const { action, target } = data;
-    
-    switch (action) {
-      case 'mute':
-        const sourceName = obsWebSocketService.mapApplicationToSource(target);
-        await obsWebSocketService.toggleMute(sourceName);
-        break;
-      case 'playPause':
-        // Trigger in parent component or audio service
-        window.dispatchEvent(new CustomEvent('midiHotkey', { 
-          detail: { action: 'playPause' } 
-        }));
-        break;
-      case 'nextSong':
-        window.dispatchEvent(new CustomEvent('midiHotkey', { 
-          detail: { action: 'nextSong' } 
-        }));
-        break;
-      case 'prevSong':
-        window.dispatchEvent(new CustomEvent('midiHotkey', { 
-          detail: { action: 'prevSong' } 
-        }));
-        break;
-      case 'shuffle':
-        window.dispatchEvent(new CustomEvent('midiHotkey', { 
-          detail: { action: 'shuffle' } 
-        }));
-        break;
-      case 'moodSwap':
-        window.dispatchEvent(new CustomEvent('midiHotkey', { 
-          detail: { action: 'moodSwap', target } 
-        }));
-        break;
-      case 'soundEffect':
-        window.dispatchEvent(new CustomEvent('midiHotkey', { 
-          detail: { action: 'soundEffect', target } 
-        }));
-        break;
-      default:
-        console.log('Unknown MIDI hotkey action:', action);
-    }
+    console.log('=== END DEBUG ===');
   };
 
   // MIDI Learning Functions
@@ -241,53 +253,17 @@ const AudioMixer = () => {
     console.log(`AudioMixer: Starting MIDI learning for ${sourceName} - ${type}`);
     setLearningMidi({ sourceName, type });
     
-    // Start learning mode with proper callback
-    midiService.startLearning((midiMessage) => {
-      console.log(`AudioMixer: MIDI Learning completed: ${sourceName} ${type} -> CC${midiMessage.note}`);
-      
-      // Store the mapping locally in AudioMixer
-      const newMappings = {
-        ...sourceMidiMappings,
-        [sourceName]: {
-          ...sourceMidiMappings[sourceName],
-          [type]: midiMessage.note.toString()
-        }
-      };
-      
-      setSourceMidiMappings(newMappings);
-      saveAudioMixerMappings(newMappings);
-      
-      // Create MIDI mapping in service
-      const midiKey = midiMessage.note.toString();
-      
-      if (type === 'volume') {
-        const mapping = {
-          type: 'volume',
-          target: sourceName, // Use actual source name from OBS
-          min: 0,
-          max: 127
-        };
-        console.log(`AudioMixer: Creating volume mapping for key ${midiKey}:`, mapping);
-        midiService.setMapping(midiKey, mapping);
-      } else if (type === 'mute') {
-        const mapping = {
-          type: 'hotkey',
-          action: 'mute',
-          target: sourceName // Use actual source name from OBS
-        };
-        console.log(`AudioMixer: Creating mute mapping for key ${midiKey}:`, mapping);
-        midiService.setMapping(midiKey, mapping);
-      }
-      
-      // Stop learning
+    const success = globalStateService.startMIDILearning(`AudioMixer_${sourceName}_${type}`);
+    if (!success) {
+      console.error('AudioMixer: Failed to start MIDI learning');
       setLearningMidi(null);
-    });
+    }
   };
 
   const stopMidiLearning = () => {
-    console.log('Stopping MIDI learning');
+    console.log('AudioMixer: Stopping MIDI learning');
     setLearningMidi(null);
-    midiService.stopLearning();
+    globalStateService.stopMIDILearning();
   };
 
   // Source visibility functions
@@ -311,19 +287,49 @@ const AudioMixer = () => {
     setHiddenSources(new Set(audioSources.map(s => s.name)));
   };
 
+  // Volume and Mute Control
+  const handleVolumeChange = async (sourceName, volumeDb) => {
+    console.log(`AudioMixer: Setting volume for ${sourceName} to ${volumeDb}dB`);
+    
+    const success = await globalStateService.setVolume(sourceName, volumeDb, 'AudioMixer');
+    if (!success) {
+      console.error('AudioMixer: Failed to set volume');
+    }
+  };
+  
+  const handleSliderStart = useCallback((sourceName) => {
+    setDraggedSlider(sourceName);
+  }, []);
+  
+  const handleSliderEnd = useCallback(() => {
+    setDraggedSlider(null);
+  }, []);
+
+  const handleMuteToggle = async (sourceName) => {
+    console.log(`AudioMixer: Toggling mute for ${sourceName}`);
+    
+    const success = await globalStateService.toggleMute(sourceName, 'AudioMixer');
+    if (!success) {
+      console.error('AudioMixer: Failed to toggle mute');
+    }
+  };
+
+  // Connection functions
   const connectToOBS = async () => {
-    // Use settings from central store
     if (!settings.obsWebSocketEnabled) {
       alert('OBS WebSocket is disabled. Enable it in Settings first.');
       return;
     }
     
     try {
-      await obsWebSocketService.connect(
-        settings.obsWebSocketHost,
-        settings.obsWebSocketPort,
-        settings.obsWebSocketPassword
-      );
+      const obsService = globalStateService.services.obs;
+      if (obsService) {
+        await obsService.connect(
+          settings.obsWebSocketHost,
+          settings.obsWebSocketPort,
+          settings.obsWebSocketPassword
+        );
+      }
     } catch (error) {
       console.error('Failed to connect to OBS:', error);
       alert('Failed to connect to OBS. Please check your settings.');
@@ -333,57 +339,13 @@ const AudioMixer = () => {
   const refreshSources = async () => {
     if (connected) {
       try {
-        await obsWebSocketService.discoverAudioSources();
+        const obsService = globalStateService.services.obs;
+        if (obsService) {
+          await obsService.discoverAudioSources();
+        }
       } catch (error) {
         console.error('Failed to refresh sources:', error);
       }
-    }
-  };
-
-  const handleVolumeChange = async (sourceName, volumeDb) => {
-    console.log(`AudioMixer: Setting volume for ${sourceName} to ${volumeDb}dB`);
-    
-    // Optimistic update für responsiveness
-    setAudioSources(prev => 
-      prev.map(source => 
-        source.name === sourceName 
-          ? { ...source, volumeDb: volumeDb }
-          : source
-      )
-    );
-    
-    // Actual OBS update
-    const success = await obsWebSocketService.setVolume(sourceName, volumeDb);
-    if (!success) {
-      console.error('Failed to set volume in OBS, reverting UI change');
-      // Revert on failure (könnte hier die ursprünglichen Werte wiederherstellen)
-    }
-  };
-
-  const handleMuteToggle = async (sourceName) => {
-    console.log(`AudioMixer: Toggling mute for ${sourceName}`);
-    
-    // Optimistic update
-    setAudioSources(prev => 
-      prev.map(source => 
-        source.name === sourceName 
-          ? { ...source, muted: !source.muted }
-          : source
-      )
-    );
-    
-    // Actual OBS update
-    const success = await obsWebSocketService.toggleMute(sourceName);
-    if (!success) {
-      console.error('Failed to toggle mute in OBS, reverting UI change');
-      // Revert on failure
-      setAudioSources(prev => 
-        prev.map(source => 
-          source.name === sourceName 
-            ? { ...source, muted: !source.muted }
-            : source
-        )
-      );
     }
   };
 
@@ -403,9 +365,26 @@ const AudioMixer = () => {
     const volumeMapping = sourceMidiMappings[source.name]?.volume;
     const muteMapping = sourceMidiMappings[source.name]?.mute;
     
+    const removeMidiMapping = (type) => {
+      const mapping = sourceMidiMappings[source.name]?.[type];
+      if (mapping) {
+        console.log(`AudioMixer: Removing MIDI mapping for ${source.name} ${type}: ${mapping}`);
+        
+        globalStateService.removeMIDIMapping(mapping);
+        
+        setSourceMidiMappings(prev => ({
+          ...prev,
+          [source.name]: {
+            ...prev[source.name],
+            [type]: undefined
+          }
+        }));
+      }
+    };
+    
     return (
       <div className="flex items-center space-x-2">
-        {/* Mute Button with MIDI Learning */}
+        {/* Mute Button mit MIDI Learning */}
         <div className="flex flex-col items-center space-y-1">
           <button
             onClick={() => handleMuteToggle(source.name)}
@@ -418,40 +397,64 @@ const AudioMixer = () => {
             {source.muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
           
-          <button
-            onClick={() => isLearningMute ? stopMidiLearning() : startMidiLearning(source.name, 'mute')}
-            className={`px-1 py-0.5 text-xs rounded transition-colors ${
-              isLearningMute 
-                ? 'bg-red-500 text-white animate-pulse' 
-                : muteMapping
-                  ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
-                  : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
-            }`}
-            title={isLearningMute ? 'Cancel MIDI learning' : 'Learn MIDI for mute'}
-          >
-            {isLearningMute ? 'Cancel' : muteMapping ? `CC${muteMapping}` : 'Learn'}
-          </button>
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={() => isLearningMute ? stopMidiLearning() : startMidiLearning(source.name, 'mute')}
+              className={`px-1 py-0.5 text-xs rounded transition-colors ${
+                isLearningMute 
+                  ? 'bg-red-500 text-white animate-pulse' 
+                  : muteMapping
+                    ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
+                    : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
+              }`}
+              title={isLearningMute ? 'Cancel MIDI learning' : 'Learn MIDI for mute'}
+            >
+              {isLearningMute ? 'Cancel' : muteMapping ? `CC${muteMapping}` : 'Learn'}
+            </button>
+            
+            {muteMapping && !isLearningMute && (
+              <button
+                onClick={() => removeMidiMapping('mute')}
+                className="px-1 py-0.5 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                title="Remove MIDI mapping"
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
         
-        {/* Volume Slider with MIDI Learning */}
+        {/* Volume Slider mit MIDI Learning */}
         <div className="flex-1">
           <div className="flex items-center justify-between mb-1">
             <div className="text-xs text-gray-400">
               {source.volumeDb?.toFixed(1) || '-60.0'} dB
             </div>
-            <button
-              onClick={() => isLearningVolume ? stopMidiLearning() : startMidiLearning(source.name, 'volume')}
-              className={`px-2 py-0.5 text-xs rounded transition-colors ${
-                isLearningVolume 
-                  ? 'bg-red-500 text-white animate-pulse' 
-                  : volumeMapping
-                    ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
-                    : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
-              }`}
-              title={isLearningVolume ? 'Cancel MIDI learning' : 'Learn MIDI for volume'}
-            >
-              {isLearningVolume ? 'Cancel' : volumeMapping ? `CC${volumeMapping}` : 'Learn Vol'}
-            </button>
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={() => isLearningVolume ? stopMidiLearning() : startMidiLearning(source.name, 'volume')}
+                className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                  isLearningVolume 
+                    ? 'bg-red-500 text-white animate-pulse' 
+                    : volumeMapping
+                      ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                      : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
+                }`}
+                title={isLearningVolume ? 'Cancel MIDI learning' : 'Learn MIDI for volume'}
+              >
+                {isLearningVolume ? 'Cancel' : volumeMapping ? `CC${volumeMapping}` : 'Learn Vol'}
+              </button>
+              
+              {volumeMapping && !isLearningVolume && (
+                <button
+                  onClick={() => removeMidiMapping('volume')}
+                  className="px-1 py-0.5 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                  title="Remove MIDI mapping"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           </div>
           
           <input
@@ -461,62 +464,12 @@ const AudioMixer = () => {
             step="0.1"
             value={source.volumeDb || -60}
             onChange={(e) => handleVolumeChange(source.name, parseFloat(e.target.value))}
+            onMouseDown={() => handleSliderStart(source.name)}
+            onMouseUp={handleSliderEnd}
+            onTouchStart={() => handleSliderStart(source.name)}
+            onTouchEnd={handleSliderEnd}
             className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
           />
-        </div>
-      </div>
-    );
-  };
-
-  const renderAudioMeter = (sourceName, levels) => {
-    if (!levels) return null;
-
-    const { left, right } = levels;
-    const leftHeight = Math.max(0, (left + 60) / 60 * 100); // -60dB bis 0dB = 0% bis 100%
-    const rightHeight = Math.max(0, (right + 60) / 60 * 100);
-
-    return (
-      <div className="flex space-x-1 h-16 w-8">
-        {/* Left Channel */}
-        <div className="relative w-3 bg-gray-800 rounded-sm overflow-hidden">
-          <motion.div
-            className="absolute bottom-0 w-full bg-gradient-to-t from-green-500 via-yellow-500 to-red-500"
-            initial={{ height: 0 }}
-            animate={{ height: `${leftHeight}%` }}
-            transition={{ type: "tween", duration: 0.1 }}
-          />
-          {/* Peak Indicator */}
-          {levels.peak?.left && (
-            <motion.div
-              className="absolute w-full h-0.5 bg-white"
-              style={{ 
-                bottom: `${Math.max(0, (levels.peak.left + 60) / 60 * 100)}%` 
-              }}
-              animate={{ opacity: [1, 0.3, 1] }}
-              transition={{ duration: 0.5, repeat: Infinity }}
-            />
-          )}
-        </div>
-        
-        {/* Right Channel */}
-        <div className="relative w-3 bg-gray-800 rounded-sm overflow-hidden">
-          <motion.div
-            className="absolute bottom-0 w-full bg-gradient-to-t from-green-500 via-yellow-500 to-red-500"
-            initial={{ height: 0 }}
-            animate={{ height: `${rightHeight}%` }}
-            transition={{ type: "tween", duration: 0.1 }}
-          />
-          {/* Peak Indicator */}
-          {levels.peak?.right && (
-            <motion.div
-              className="absolute w-full h-0.5 bg-white"
-              style={{ 
-                bottom: `${Math.max(0, (levels.peak.right + 60) / 60 * 100)}%` 
-              }}
-              animate={{ opacity: [1, 0.3, 1] }}
-              transition={{ duration: 0.5, repeat: Infinity }}
-            />
-          )}
         </div>
       </div>
     );
@@ -539,10 +492,37 @@ const AudioMixer = () => {
                 <span className="text-xs text-gray-400">MIDI</span>
               </>
             )}
+            {testMode && (
+              <>
+                <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                <span className="text-xs text-orange-400">TEST MODE</span>
+              </>
+            )}
           </div>
         </div>
         
         <div className="flex space-x-2">
+          {/* 🧪 Debug & Test Buttons */}
+          <button
+            onClick={() => setDebugMode(!debugMode)}
+            className={`p-2 rounded transition-colors ${
+              debugMode 
+                ? 'bg-blue-500/30 text-blue-300' 
+                : 'text-blue-400 hover:text-blue-300'
+            }`}
+            title="Toggle debug mode"
+          >
+            <Bug className="w-4 h-4" />
+          </button>
+          
+          <button
+            onClick={testAudioVisualization}
+            className="p-2 text-orange-400 hover:text-orange-300 transition-colors"
+            title="Test audio visualization (10s)"
+          >
+            <TestTube className="w-4 h-4" />
+          </button>
+          
           {connected && (
             <>
               <button
@@ -568,6 +548,22 @@ const AudioMixer = () => {
               >
                 <Activity className="w-4 h-4" />
               </button>
+              
+              <button
+                onClick={testOBSConnection}
+                className="p-2 text-purple-400 hover:text-purple-300 transition-colors"
+                title="Test OBS connection & events"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+              
+              <button
+                onClick={debugOBSEvents}
+                className="p-2 text-yellow-400 hover:text-yellow-300 transition-colors"
+                title="Debug OBS events (check console)"
+              >
+                <Power className="w-4 h-4" />
+              </button>
             </>
           )}
           
@@ -575,7 +571,7 @@ const AudioMixer = () => {
             <button
               onClick={connectToOBS}
               className="p-2 bg-green-500/20 text-green-400 hover:bg-green-500/30 rounded-lg transition-colors"
-              title="Connect to OBS (use Settings to configure)"
+              title="Connect to OBS"
             >
               <Power className="w-4 h-4" />
             </button>
@@ -583,18 +579,31 @@ const AudioMixer = () => {
         </div>
       </div>
 
+      {/* 🧪 Debug Info Panel */}
+      {debugMode && (
+        <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+          <div className="text-sm text-blue-400 font-medium mb-2">Debug Information</div>
+          <div className="grid grid-cols-2 gap-2 text-xs text-blue-300">
+            <div>Audio Sources: {audioSources.length}</div>
+            <div>Real-time Levels: {Object.keys(realTimeAudioLevels).length}</div>
+            <div>Last Update: {debugInfo.lastAudioUpdate ? new Date(debugInfo.lastAudioUpdate).toLocaleTimeString() : 'Never'}</div>
+            <div>Total Events: {debugInfo.totalAudioEvents || 0}</div>
+          </div>
+        </div>
+      )}
+
       {/* MIDI Activity Monitor */}
-      {lastMIDIActivity && (
+      {lastMIDIMessage && (
         <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
           <div className="flex items-center justify-between">
             <span className="text-xs text-blue-400 font-medium">MIDI Activity</span>
             <span className="text-xs text-gray-400">
-              {new Date(lastMIDIActivity.timestamp).toLocaleTimeString()}
+              {new Date(lastMIDIMessage.timestamp).toLocaleTimeString()}
             </span>
           </div>
           <div className="text-xs text-blue-300 mt-1">
-            {lastMIDIActivity.type} - CC/Note: {lastMIDIActivity.note} - Value: {lastMIDIActivity.velocity}
-            {lastMIDIActivity.mock && ' (Keyboard Simulation)'}
+            {lastMIDIMessage.type} - CC/Note: {lastMIDIMessage.note} - Value: {lastMIDIMessage.velocity}
+            {lastMIDIMessage.mock && ' (Keyboard Simulation)'}
           </div>
         </div>
       )}
@@ -635,21 +644,17 @@ const AudioMixer = () => {
                     </button>
                   </div>
 
-                  {/* Audio Meter */}
+                  {/* 🎵 Audio Meter - Mit Debug-Modus */}
                   <div className="flex items-center space-x-2">
-                    {renderAudioMeter(source.name, audioLevels[source.name])}
-                    
-                    {/* Current Level Display */}
-                    <div className="text-xs text-gray-400 w-12 text-right">
-                      {audioLevels[source.name] ? (
-                        <>
-                          <div>{audioLevels[source.name].left.toFixed(0)}dB</div>
-                          <div>{audioLevels[source.name].right.toFixed(0)}dB</div>
-                        </>
-                      ) : (
-                        <div>-∞</div>
-                      )}
-                    </div>
+                    <AudioLevelMeter
+                      inputName={source.name}
+                      audioLevel={realTimeAudioLevels[source.name]}
+                      isActive={connected}
+                      width={150}
+                      height={32}
+                      style="horizontal"
+                      debug={debugMode}
+                    />
                   </div>
 
                   {/* Volume Control */}
@@ -690,7 +695,7 @@ const AudioMixer = () => {
                   </div>
                 </div>
                 
-                {/* Hidden Sources List (Expandable) */}
+                {/* Hidden Sources List */}
                 <AnimatePresence>
                   {showHiddenSources && (
                     <motion.div
@@ -752,10 +757,10 @@ const AudioMixer = () => {
         <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
           <div className="flex items-center space-x-2 text-blue-400 text-sm">
             <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-            <span>MIDI Controller Connected</span>
+            <span>MIDI Controller Connected (Global)</span>
           </div>
           <p className="text-xs text-blue-300 mt-1">
-            Use MIDI controls 1-8 for volume, 16-23 for hotkeys
+            Learn volume and mute controls for each source. All mappings are managed globally.
           </p>
         </div>
       )}

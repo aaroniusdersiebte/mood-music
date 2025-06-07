@@ -1,6 +1,6 @@
-// OBS WebSocket Client für Audio-Level-Steuerung
-// Basiert auf OBS WebSocket v5.5.2 API
-import OBSWebSocket from 'obs-websocket-js';
+// 🎵 GEFIXT: OBS WebSocket Client mit funktionierender Audio-Visualisierung
+// Das Problem war: EventSubscription wurde nicht korrekt aus obs-websocket-js importiert!
+import OBSWebSocket, { EventSubscription } from 'obs-websocket-js';
 
 class OBSWebSocketService {
   constructor() {
@@ -11,25 +11,7 @@ class OBSWebSocketService {
     this.audioSources = new Map();
     this.audioLevels = new Map();
     this.callbacks = new Map();
-    this.lastConnectionParams = null; // Für Reconnect
-    this.subscriptions = {
-      general: 1,
-      config: 2,
-      sources: 4,
-      scenes: 8,
-      inputs: 16,
-      transitions: 32,
-      filters: 64,
-      outputs: 128,
-      sceneItems: 256,
-      mediaInputs: 512,
-      vendors: 1024,
-      ui: 2048,
-      inputVolumeMeters: 4096, // Wichtig für Audio-Level-Monitoring
-      inputActiveStateChanged: 8192,
-      inputShowStateChanged: 16384,
-      sceneItemTransformChanged: 32768
-    };
+    this.lastConnectionParams = null;
 
     // Setup event handlers
     this.setupEventHandlers();
@@ -37,37 +19,42 @@ class OBSWebSocketService {
 
   setupEventHandlers() {
     this.obs.on('ConnectionOpened', () => {
-      console.log('OBS WebSocket connected');
+      console.log('🔗 OBS WebSocket connected');
       this.connected = true;
       this.triggerCallback('connected');
-      this.discoverAudioSources();
+      
+      setTimeout(() => {
+        this.discoverAudioSources();
+      }, 1000);
     });
 
     this.obs.on('ConnectionClosed', () => {
-      console.log('OBS WebSocket disconnected');
+      console.log('❌ OBS WebSocket disconnected');
       this.connected = false;
       this.triggerCallback('disconnected');
       this.startReconnect();
     });
 
     this.obs.on('ConnectionError', (error) => {
-      console.error('OBS WebSocket connection error:', error);
+      console.error('❌ OBS WebSocket connection error:', error);
       this.triggerCallback('error', error);
       this.startReconnect();
     });
 
-    // Audio Level Monitoring
+    // 🎵 KRITISCH: Audio Level Monitoring - InputVolumeMeters Event Handler
     this.obs.on('InputVolumeMeters', (data) => {
-      console.log('OBS Event: InputVolumeMeters received:', data);
+      console.log('🎵 Audio level event received:', data); // Debug-Log
       this.handleAudioLevels(data);
     });
 
     // Audio Source Changes
     this.obs.on('InputVolumeChanged', (data) => {
+      console.log('🔊 Volume changed:', data);
       this.handleVolumeChange(data);
     });
 
     this.obs.on('InputMuteStateChanged', (data) => {
+      console.log('🔇 Mute changed:', data);
       this.handleMuteChange(data);
     });
 
@@ -83,96 +70,61 @@ class OBSWebSocketService {
 
   async connect(host = 'localhost', port = 4455, password = '') {
     try {
-      // Disconnect existing connection first
       if (this.connected) {
         await this.disconnect();
       }
 
-      // Speichere Verbindungsparameter für Reconnect
       this.lastConnectionParams = { host, port, password };
 
-      const connectionInfo = {
-        address: `ws://${host}:${port}`,
-        password: password || undefined,
-        eventSubscriptions: this.calculateSubscriptions()
+      // 🎯 LÖSUNG: Korrekte Event-Subscription mit echten EventSubscription-Konstanten!
+      const connectionOptions = {
+        eventSubscriptions: (
+          EventSubscription.General |
+          EventSubscription.Inputs |
+          EventSubscription.Scenes |
+          EventSubscription.InputVolumeMeters |        // 🎵 DAS IST DER SCHLÜSSEL!
+          EventSubscription.InputActiveStateChanged
+        ),
+        rpcVersion: 1
       };
+      
+      console.log('🔗 Connecting with event subscriptions:', connectionOptions.eventSubscriptions);
+      console.log('🎵 InputVolumeMeters subscription value:', EventSubscription.InputVolumeMeters);
+      
+      await this.obs.connect(`ws://${host}:${port}`, password || undefined, connectionOptions);
 
-      // Use the correct connection method for obs-websocket-js v5
-      await this.obs.connect(connectionInfo.address, connectionInfo.password, {
-        eventSubscriptions: connectionInfo.eventSubscriptions,
-        rpcVersion: 1 // Add RPC version for compatibility
-      });
-
-      console.log('Connected to OBS WebSocket:', `${host}:${port}`);
-      console.log('Event subscriptions:', connectionInfo.eventSubscriptions);
+      console.log('✅ Connected to OBS WebSocket with audio level events enabled:', `${host}:${port}`);
       return true;
     } catch (error) {
-      console.error('Failed to connect to OBS:', error);
-      // Try fallback connection without auth
+      console.error('❌ Failed to connect to OBS:', error);
+      
+      // Fallback ohne Passwort
       if (password) {
         try {
-          console.log('Retrying without password...');
+          console.log('🔄 Retrying without password...');
           await this.obs.connect(`ws://${host}:${port}`, undefined, {
-            eventSubscriptions: this.calculateSubscriptions(),
+            eventSubscriptions: (
+              EventSubscription.General |
+              EventSubscription.Inputs |
+              EventSubscription.Scenes |
+              EventSubscription.InputVolumeMeters |
+              EventSubscription.InputActiveStateChanged
+            ),
             rpcVersion: 1
           });
-          console.log('Connected to OBS WebSocket (no auth):', `${host}:${port}`);
+          console.log('✅ Connected to OBS WebSocket (no auth) with audio events:', `${host}:${port}`);
           return true;
         } catch (fallbackError) {
-          console.error('Fallback connection failed:', fallbackError);
+          console.error('❌ Fallback connection failed:', fallbackError);
         }
       }
       throw error;
     }
   }
 
-  calculateSubscriptions() {
-    // Manually define EventSubscription bit values for InputVolumeMeters
-    const EventSubscription = {
-      General: 1,
-      Config: 2,
-      Scenes: 4,
-      Inputs: 16,
-      Transitions: 32,
-      Filters: 64,
-      Outputs: 128,
-      SceneItems: 256,
-      MediaInputs: 512,
-      Vendors: 1024,
-      Ui: 2048,
-      InputVolumeMeters: 4096,
-      InputActiveStateChanged: 8192,
-      InputShowStateChanged: 16384,
-      SceneItemTransformChanged: 32768,
-      All: 511 // General through Ui
-    };
-    
-    // Berechne Subscription-Flags für Audio-Monitoring und andere Events
-    const subscriptions = (
-      EventSubscription.General |
-      EventSubscription.Inputs |
-      EventSubscription.InputVolumeMeters |
-      EventSubscription.InputActiveStateChanged |
-      EventSubscription.Scenes
-    );
-    
-    console.log('OBS WebSocket: Calculated subscriptions:', {
-      subscriptions,
-      binary: subscriptions.toString(2),
-      includes: {
-        General: !!(subscriptions & EventSubscription.General),
-        Inputs: !!(subscriptions & EventSubscription.Inputs),
-        InputVolumeMeters: !!(subscriptions & EventSubscription.InputVolumeMeters),
-        InputActiveStateChanged: !!(subscriptions & EventSubscription.InputActiveStateChanged),
-        Scenes: !!(subscriptions & EventSubscription.Scenes)
-      }
-    });
-    
-    return subscriptions;
-  }
-
   async disconnect() {
     this.stopReconnect();
+    
     if (this.connected) {
       try {
         await this.obs.disconnect();
@@ -213,7 +165,6 @@ class OBSWebSocketService {
   // Audio Source Discovery
   async discoverAudioSources() {
     try {
-      // Add a small delay to ensure connection is fully established
       await new Promise(resolve => setTimeout(resolve, 500));
 
       if (!this.connected) {
@@ -225,7 +176,6 @@ class OBSWebSocketService {
       
       this.audioSources.clear();
       
-      // Get audio input kinds once
       const kindData = await this.obs.call('GetInputKindList');
       const audioKinds = kindData.inputKinds.filter(kind => 
         kind.includes('audio') || 
@@ -238,7 +188,6 @@ class OBSWebSocketService {
       );
 
       for (const input of inputs) {
-        // Check if it's an audio source
         if (audioKinds.includes(input.inputKind)) {
           const sourceInfo = await this.getAudioSourceInfo(input.inputName);
           if (sourceInfo) {
@@ -247,18 +196,16 @@ class OBSWebSocketService {
         }
       }
 
-      console.log('Discovered audio sources:', Array.from(this.audioSources.keys()));
+      console.log('🎵 Discovered audio sources:', Array.from(this.audioSources.keys()));
       this.triggerCallback('sourcesDiscovered', Array.from(this.audioSources.values()));
       
     } catch (error) {
       console.error('Failed to discover audio sources:', error);
-      // Don't throw error, just log it
     }
   }
 
   async getAudioSourceInfo(sourceName) {
     try {
-      // Hole Audio-Eigenschaften
       const volumeData = await this.obs.call('GetInputVolume', { 
         inputName: sourceName 
       });
@@ -267,7 +214,6 @@ class OBSWebSocketService {
         inputName: sourceName 
       });
 
-      // Hole Quelle-Details
       const settingsData = await this.obs.call('GetInputSettings', { 
         inputName: sourceName 
       });
@@ -291,61 +237,100 @@ class OBSWebSocketService {
     }
   }
 
-  // Audio Level Handling
+  // 🎵 GEFIXT: Audio Level Handling - Jetzt mit echten Events!
   handleAudioLevels(data) {
-    const { inputName, inputLevelsMul } = data;
+    // Reduziere Spam-Logs - nur bei ersten 5 Events loggen
+    if (!this.audioEventCount) this.audioEventCount = 0;
+    if (this.audioEventCount < 5) {
+      console.log('🎵 Processing audio levels:', data.inputs ? `${data.inputs.length} inputs` : 'legacy format');
+      this.audioEventCount++;
+    }
+    
+    if (data.inputs && Array.isArray(data.inputs)) {
+      data.inputs.forEach(inputData => {
+        this.processInputLevels(inputData);
+      });
+    } else {
+      this.processInputLevels(data);
+    }
+  }
+
+  processInputLevels(inputData) {
+    const { inputName, inputLevelsMul } = inputData;
     
     if (!inputLevelsMul || inputLevelsMul.length === 0) {
       return;
     }
     
-    // OBS sendet Audio-Level als Multiplier (0.0-1.0)
-    // Konvertiere zu dB für bessere Darstellung
+    // 🎯 GEFIXT: inputLevelsMul enthält Arrays, nicht direkte Werte!
+    // inputLevelsMul[0] = [current, peak, hold] für linken Kanal
+    // inputLevelsMul[1] = [current, peak, hold] für rechten Kanal
+    const leftArray = inputLevelsMul[0] || [0];
+    const rightArray = inputLevelsMul[1] || inputLevelsMul[0] || [0];
+    
+    // Nimm den ersten Wert (current level) aus jedem Array
+    const leftMultiplier = Array.isArray(leftArray) ? leftArray[0] : leftArray;
+    const rightMultiplier = Array.isArray(rightArray) ? rightArray[0] : rightArray;
+    
+    // Extrahiere auch Peak-Werte (vermutlich der zweite Wert in den Arrays)
+    const leftPeakMultiplier = Array.isArray(leftArray) && leftArray.length > 1 ? leftArray[1] : leftMultiplier;
+    const rightPeakMultiplier = Array.isArray(rightArray) && rightArray.length > 1 ? rightArray[1] : rightMultiplier;
+    
     const levels = {
-      left: this.multiplierToDecibel(inputLevelsMul[0] || 0),
-      right: this.multiplierToDecibel(inputLevelsMul[1] || inputLevelsMul[0] || 0),
-      timestamp: Date.now()
+      left: this.multiplierToDecibel(leftMultiplier),
+      right: this.multiplierToDecibel(rightMultiplier),
+      timestamp: Date.now(),
+      isReal: true, // 🎯 WICHTIG: Markierung für echte Audio-Daten
+      peak: {
+        left: this.multiplierToDecibel(leftPeakMultiplier),
+        right: this.multiplierToDecibel(rightPeakMultiplier)
+      }
     };
 
-    // Peak Detection mit besserer Logik
+    // Debug-Log für erste 3 Events pro Source mit mehr Details
+    if (!this.debugCounters) this.debugCounters = {};
+    if (!this.debugCounters[inputName]) this.debugCounters[inputName] = 0;
+    if (this.debugCounters[inputName] < 3) {
+      console.log(`🎵 ${inputName}: L=${levels.left.toFixed(1)}dB R=${levels.right.toFixed(1)}dB | Peak: L=${levels.peak.left.toFixed(1)}dB R=${levels.peak.right.toFixed(1)}dB (Event #${this.debugCounters[inputName] + 1})`);
+      this.debugCounters[inputName]++;
+      
+      // Zusätzliche Info bei erstem Event
+      if (this.debugCounters[inputName] === 1) {
+        console.log(`📊 ${inputName} - Audio source initialized with real data`);
+        console.log(`🔍 ${inputName} - Raw data structure:`, { leftArray, rightArray });
+      }
+    }
+
+    // Update audio source mit neuen Levels
     const source = this.audioSources.get(inputName);
     if (source) {
-      const prevPeak = source.peak || { left: -60, right: -60 };
-      
-      // Peak wird gehalten und fällt langsam ab
-      const peakDecay = 0.98; // Slower decay for better visibility
-      levels.peak = {
-        left: Math.max(levels.left, prevPeak.left * peakDecay),
-        right: Math.max(levels.right, prevPeak.right * peakDecay)
-      };
-      
-      // Update source info
       source.levels = levels;
       source.peak = levels.peak;
       source.lastUpdate = Date.now();
-      
-      // Store updated source
       this.audioSources.set(inputName, source);
     }
 
     this.audioLevels.set(inputName, levels);
     
-    // Enhanced logging for debugging
-    if (Math.max(levels.left, levels.right) > -50) { // Only log when there's meaningful audio
-      console.log(`OBS Audio Levels: ${inputName} - L: ${levels.left.toFixed(1)}dB R: ${levels.right.toFixed(1)}dB`);
+    // 🎯 Forward to GlobalStateService
+    try {
+      if (window.globalStateService) {
+        window.globalStateService.updateAudioLevels(inputName, levels);
+      }
+    } catch (error) {
+      console.error('Failed to forward audio levels to GlobalStateService:', error);
     }
     
     // Trigger callback for UI
     this.triggerCallback('audioLevels', { sourceName: inputName, levels });
   }
 
-  // Mathematische Konvertierung Multiplier zu dB
+  // Mathematische Konvertierung (wie im alten Projekt)
   multiplierToDecibel(multiplier) {
-    if (multiplier <= 0) return -60; // Minimum dB
+    if (multiplier <= 0) return -60;
     return Math.max(-60, 20 * Math.log10(multiplier));
   }
 
-  // Konvertierung dB zu Multiplier
   decibelToMultiplier(db) {
     if (db <= -60) return 0;
     return Math.pow(10, db / 20);
@@ -354,7 +339,6 @@ class OBSWebSocketService {
   // Volume Control
   async setVolume(sourceName, volumeDb) {
     try {
-      // Stelle sicher, dass der Wert im OBS-Bereich liegt (-60 bis 0 dB)
       const clampedDb = Math.max(-60, Math.min(0, volumeDb));
       
       await this.obs.call('SetInputVolume', {
@@ -362,7 +346,7 @@ class OBSWebSocketService {
         inputVolumeDb: clampedDb
       });
 
-      console.log(`Set volume: ${sourceName} = ${clampedDb}dB`);
+      console.log(`🔊 Set volume: ${sourceName} = ${clampedDb}dB`);
       return true;
     } catch (error) {
       console.error(`Failed to set volume for ${sourceName}:`, error);
@@ -377,7 +361,7 @@ class OBSWebSocketService {
         inputMuted: muted
       });
 
-      console.log(`Set mute: ${sourceName} = ${muted}`);
+      console.log(`🔇 Set mute: ${sourceName} = ${muted}`);
       return true;
     } catch (error) {
       console.error(`Failed to set mute for ${sourceName}:`, error);
@@ -398,40 +382,7 @@ class OBSWebSocketService {
     }
   }
 
-  // Batch Operations
-  async setMultipleVolumes(volumeSettings) {
-    const results = {};
-    
-    for (const [sourceName, volumeDb] of Object.entries(volumeSettings)) {
-      results[sourceName] = await this.setVolume(sourceName, volumeDb);
-    }
-    
-    return results;
-  }
-
-  // Source Mapping für verschiedene Anwendungen
-  mapApplicationToSource(appName) {
-    // Mapping verschiedener Anwendungsnamen zu OBS-Quellennamen
-    const mappings = {
-      'desktop': 'Desktop Audio',
-      'desktop_audio': 'Desktop Audio',
-      'mic': 'Mic/Aux',
-      'microphone': 'Mic/Aux',
-      'discord': 'Discord',
-      'browser': 'Browser',
-      'chrome': 'Browser',
-      'firefox': 'Browser',
-      'game': 'Game Audio',
-      'music': 'Music',
-      'spotify': 'Music',
-      'alert': 'Alert Audio',
-      'obs': 'OBS Audio'
-    };
-
-    return mappings[appName.toLowerCase()] || appName;
-  }
-
-  // Event Handlers
+  // Event Handlers für Synchronisation
   handleVolumeChange(data) {
     const { inputName, inputVolume, inputVolumeDb } = data;
     
@@ -439,6 +390,15 @@ class OBSWebSocketService {
     if (source) {
       source.volume = inputVolume;
       source.volumeDb = inputVolumeDb;
+      this.audioSources.set(inputName, source);
+    }
+
+    try {
+      if (window.globalStateService) {
+        window.globalStateService.updateSourceVolume(inputName, inputVolumeDb);
+      }
+    } catch (error) {
+      console.error('Failed to forward volume change to GlobalStateService:', error);
     }
 
     this.triggerCallback('volumeChanged', {
@@ -464,7 +424,7 @@ class OBSWebSocketService {
 
   handleSourceCreated(data) {
     console.log('New audio source created:', data.inputName);
-    this.discoverAudioSources(); // Re-discover sources
+    this.discoverAudioSources();
   }
 
   handleSourceRemoved(data) {
@@ -472,6 +432,68 @@ class OBSWebSocketService {
     this.audioSources.delete(data.inputName);
     this.audioLevels.delete(data.inputName);
     this.triggerCallback('sourceRemoved', data.inputName);
+  }
+
+  // 🧪 Test & Debug Functions
+  async testConnection() {
+    try {
+      const version = await this.obs.call('GetVersion');
+      console.log('🔗 OBS WebSocket version:', version);
+      return version;
+    } catch (error) {
+      console.error('❌ OBS connection test failed:', error);
+      return null;
+    }
+  }
+
+  async testEventSubscription() {
+    if (!this.connected) {
+      console.log('❌ Not connected to OBS');
+      return false;
+    }
+    
+    console.log('✅ Connected to OBS. Testing event subscription...');
+    console.log('🎵 Event subscriptions active. Audio should be playing in OBS to see InputVolumeMeters events.');
+    
+    // Test: Audio-Sources anzeigen
+    const sources = this.getAudioSources();
+    console.log(`📊 Found ${sources.length} audio sources:`, sources.map(s => s.name));
+    
+    // Test: Event-Subscription-Details
+    console.log('🔧 Event subscription details:');
+    console.log('- EventSubscription.InputVolumeMeters:', EventSubscription.InputVolumeMeters);
+    console.log('- Total subscription mask:', (
+      EventSubscription.General |
+      EventSubscription.Inputs |
+      EventSubscription.Scenes |
+      EventSubscription.InputVolumeMeters |
+      EventSubscription.InputActiveStateChanged
+    ));
+    
+    return true;
+  }
+
+  // Force audio level test
+  forceAudioLevelTest() {
+    console.log('🧪 Force testing audio levels...');
+    
+    // Simuliere Test-Audio-Level für erste Source
+    const firstSource = Array.from(this.audioSources.keys())[0];
+    if (firstSource) {
+      const testLevels = {
+        left: -20 + Math.sin(Date.now() / 1000) * 10,
+        right: -25 + Math.cos(Date.now() / 1000) * 10,
+        timestamp: Date.now(),
+        isReal: false, // Test-Daten
+        peak: { left: -15, right: -15 }
+      };
+      
+      console.log(`🧪 Test levels for ${firstSource}:`, testLevels);
+      
+      if (window.globalStateService) {
+        window.globalStateService.updateAudioLevels(firstSource, testLevels);
+      }
+    }
   }
 
   // Getters
@@ -497,206 +519,6 @@ class OBSWebSocketService {
 
   isConnected() {
     return this.connected;
-  }
-
-  // Scene & Source Management
-  async getCurrentScene() {
-    try {
-      const { currentProgramSceneName } = await this.obs.call('GetCurrentProgramScene');
-      return currentProgramSceneName;
-    } catch (error) {
-      console.error('Failed to get current scene:', error);
-      return null;
-    }
-  }
-
-  async setCurrentScene(sceneName) {
-    try {
-      await this.obs.call('SetCurrentProgramScene', { 
-        sceneName 
-      });
-      return true;
-    } catch (error) {
-      console.error('Failed to set scene:', error);
-      return false;
-    }
-  }
-
-  // Song Display Functions for OBS Text Sources
-  async updateSongDisplay(songInfo, moodInfo, settings = {}) {
-    try {
-      if (!this.connected) {
-        console.log('Not connected to OBS, skipping song display update');
-        return false;
-      }
-
-      const textSourceName = settings.obsSongTextSource || 'Current Song';
-      const displayDuration = settings.obsDisplayDuration || 5000;
-      const alwaysShow = settings.obsAlwaysShow || false;
-      
-      // Format song text
-      const songText = this.formatSongText(songInfo, moodInfo, settings);
-      
-      // Update text source
-      const success = await this.updateTextSource(textSourceName, songText);
-      
-      if (success) {
-        console.log('Song display updated in OBS:', songInfo.title);
-        
-        // Auto-hide after duration (if not always showing)
-        if (!alwaysShow && displayDuration > 0) {
-          setTimeout(async () => {
-            await this.hideTextSource(textSourceName);
-          }, displayDuration);
-        }
-        
-        this.triggerCallback('songDisplayUpdated', { song: songInfo, mood: moodInfo });
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      console.error('Failed to update song display:', error);
-      return false;
-    }
-  }
-
-  formatSongText(songInfo, moodInfo, settings = {}) {
-    const template = settings.obsSongTemplate || 'Now Playing: {title}\nArtist: {artist}\nMood: {mood}';
-    
-    return template
-      .replace('{title}', songInfo.title || 'Unknown Title')
-      .replace('{artist}', songInfo.artist || 'Unknown Artist')
-      .replace('{album}', songInfo.album || '')
-      .replace('{mood}', moodInfo.name || 'Unknown Mood')
-      .replace('{genre}', songInfo.genre || '')
-      .replace('{year}', songInfo.year || '')
-      .replace('\\n', '\n'); // Convert \\n to actual newlines
-  }
-
-  async updateTextSource(sourceName, text) {
-    try {
-      // Try to update existing text source
-      await this.obs.call('SetInputSettings', {
-        inputName: sourceName,
-        inputSettings: {
-          text: text
-        }
-      });
-      
-      // Make source visible
-      await this.setSourceVisibility(sourceName, true);
-      
-      return true;
-    } catch (error) {
-      console.error(`Failed to update text source '${sourceName}':`, error);
-      
-      // Try to create the source if it doesn't exist
-      try {
-        await this.createTextSource(sourceName, text);
-        return true;
-      } catch (createError) {
-        console.error(`Failed to create text source '${sourceName}':`, createError);
-        return false;
-      }
-    }
-  }
-
-  async createTextSource(sourceName, text) {
-    try {
-      // Create a new text source
-      await this.obs.call('CreateInput', {
-        sceneName: await this.getCurrentScene(),
-        inputName: sourceName,
-        inputKind: 'text_gdiplus_v2', // Windows
-        inputSettings: {
-          text: text,
-          font: {
-            face: 'Arial',
-            size: 32,
-            flags: 0
-          },
-          color: 0xFFFFFF, // White
-          align: 'left',
-          valign: 'top',
-          outline: true,
-          outline_size: 2,
-          outline_color: 0x000000 // Black outline
-        }
-      });
-      
-      console.log(`Created text source: ${sourceName}`);
-      return true;
-    } catch (error) {
-      // Try alternative text source for other platforms
-      try {
-        await this.obs.call('CreateInput', {
-          sceneName: await this.getCurrentScene(),
-          inputName: sourceName,
-          inputKind: 'text_ft2_source_v2', // Linux/macOS
-          inputSettings: {
-            text: text,
-            font_size: 32,
-            color1: 0xFFFFFF,
-            color2: 0xFFFFFF
-          }
-        });
-        
-        console.log(`Created text source (FreeType): ${sourceName}`);
-        return true;
-      } catch (ftError) {
-        console.error('Failed to create text source with both methods:', error, ftError);
-        throw ftError;
-      }
-    }
-  }
-
-  async hideTextSource(sourceName) {
-    try {
-      await this.setSourceVisibility(sourceName, false);
-      return true;
-    } catch (error) {
-      console.error(`Failed to hide text source '${sourceName}':`, error);
-      return false;
-    }
-  }
-
-  async setSourceVisibility(sourceName, visible) {
-    try {
-      const currentScene = await this.getCurrentScene();
-      if (!currentScene) {
-        throw new Error('No current scene found');
-      }
-      
-      await this.obs.call('SetSceneItemEnabled', {
-        sceneName: currentScene,
-        sceneItemId: await this.getSceneItemId(currentScene, sourceName),
-        sceneItemEnabled: visible
-      });
-      
-      return true;
-    } catch (error) {
-      console.error(`Failed to set visibility for '${sourceName}':`, error);
-      return false;
-    }
-  }
-
-  async getSceneItemId(sceneName, sourceName) {
-    try {
-      const { sceneItems } = await this.obs.call('GetSceneItemList', {
-        sceneName: sceneName
-      });
-      
-      const item = sceneItems.find(item => item.sourceName === sourceName);
-      if (!item) {
-        throw new Error(`Scene item not found: ${sourceName}`);
-      }
-      
-      return item.sceneItemId;
-    } catch (error) {
-      console.error(`Failed to get scene item ID for '${sourceName}':`, error);
-      throw error;
-    }
   }
 
   // Callback System
@@ -752,28 +574,6 @@ class OBSWebSocketService {
         console.error(`OBS callback error (${type}):`, error);
       }
     });
-  }
-
-  // Testing & Debugging
-  async testConnection() {
-    try {
-      const version = await this.obs.call('GetVersion');
-      console.log('OBS WebSocket version:', version);
-      return version;
-    } catch (error) {
-      console.error('OBS connection test failed:', error);
-      return null;
-    }
-  }
-
-  async getStats() {
-    try {
-      const stats = await this.obs.call('GetStats');
-      return stats;
-    } catch (error) {
-      console.error('Failed to get OBS stats:', error);
-      return null;
-    }
   }
 
   // Cleanup

@@ -5,6 +5,7 @@ import audioService from './services/audioService';
 import obsService from './services/obsService';
 import obsWebSocketService from './services/obsWebSocketService';
 import midiService from './services/midiService';
+import globalStateService from './services/globalStateService';
 import fileUtils from './utils/fileUtils';
 
 // Components
@@ -37,6 +38,22 @@ function App() {
   const [currentView, setCurrentView] = useState('moods');
   const [isLoading, setIsLoading] = useState(true);
 
+  // Global MIDI Volume Change Handler
+  const handleGlobalVolumeChange = async (data) => {
+    console.log('App: Handling global MIDI volume change:', data);
+    
+    const { target, value, mapping } = data;
+    
+    // Use GlobalStateService for volume control
+    const success = await globalStateService.setVolume(target, value, 'MIDI');
+    
+    if (success) {
+      console.log(`App: Global volume control successful: ${target} -> ${value}dB`);
+    } else {
+      console.error(`App: Global volume control failed for: ${target}`);
+    }
+  };
+
   // MIDI Hotkey Handler
   const handleMIDIHotkey = (data) => {
     const { action, target } = data;
@@ -67,6 +84,10 @@ function App() {
           console.log(`Mood not found: ${target}`);
         }
         break;
+      case 'mute':
+        // Global mute handling
+        globalStateService.toggleMute(target, 'MIDI');
+        break;
       case 'soundEffect':
         console.log('Sound effect triggered via MIDI:', target);
         // Add sound effect logic if needed
@@ -89,27 +110,150 @@ function App() {
     };
   }, [isPlaying, moods]);
 
-  // Initialize app
+  // Initialize app with GlobalStateService
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        console.log('App: Starting global initialization...');
+        
+        // Make GlobalStateService available globally for services
+        window.globalStateService = globalStateService;
+        
         // Ensure data directories exist
         await fileUtils.ensureDataDirectories();
         
-        // Initialize MIDI first (globally)
+        // Load saved mappings first
+        globalStateService.loadMappings();
+        
+        // Initialize MIDI globally
         if (settings.midiEnabled) {
           try {
             console.log('App: Initializing MIDI globally...');
             await midiService.initialize();
             
-            // Setup MIDI hotkey handlers
+            // Register MIDI service with global state
+            globalStateService.registerService('midi', midiService);
+            
+            // Update MIDI state
+            globalStateService.updateMIDIState({
+              connected: true,
+              devices: midiService.getAvailableDevices()
+            });
+            
+            // Sync any existing mappings from MIDI service to GlobalStateService
+            const existingMappings = midiService.getAllMappings();
+            Object.entries(existingMappings).forEach(([key, mapping]) => {
+              globalStateService.setMIDIMapping(key, mapping, 'MIDIService');
+            });
+            
+            // Setup global MIDI callbacks
             midiService.onHotkeyAction((data) => {
+              console.log('App: Global MIDI hotkey received:', data);
               handleMIDIHotkey(data);
             });
             
-            console.log('App: MIDI Service initialized globally');
+            midiService.onVolumeChange((data) => {
+              console.log('App: Global MIDI volume change:', data);
+              handleGlobalVolumeChange(data);
+            });
+            
+            midiService.onMIDIMessage((message) => {
+              globalStateService.updateMIDIState({
+                lastActivity: {
+                  ...message,
+                  timestamp: Date.now()
+                }
+              });
+            });
+            
+            console.log('App: MIDI Service initialized and registered globally');
           } catch (error) {
             console.log('App: MIDI not available:', error.message);
+            globalStateService.updateMIDIState({ connected: false });
+          }
+        }
+        
+        // Initialize OBS WebSocket
+        if (settings.obsWebSocketEnabled) {
+          try {
+            console.log('App: Initializing OBS WebSocket globally...');
+            
+            // Register OBS service with global state
+            globalStateService.registerService('obs', obsWebSocketService);
+            
+            // Setup global OBS callbacks
+            obsWebSocketService.onConnected(() => {
+              console.log('App: OBS connected globally');
+              globalStateService.updateOBSState({ connected: true });
+              
+              // Auto-discover sources
+              setTimeout(() => {
+                obsWebSocketService.discoverAudioSources();
+              }, 1000);
+            });
+            
+            obsWebSocketService.onDisconnected(() => {
+              console.log('App: OBS disconnected globally');
+              globalStateService.updateOBSState({
+                connected: false,
+                sources: [],
+                audioLevels: {}
+              });
+            });
+            
+            obsWebSocketService.onSourcesDiscovered((sources) => {
+              console.log('App: OBS sources discovered globally:', sources.length);
+              globalStateService.updateOBSState({ sources });
+            });
+            
+            obsWebSocketService.onAudioLevels((data) => {
+              // Only log when there's meaningful audio
+              if (Math.max(data.levels.left, data.levels.right) > -50) {
+                console.log('App: Audio levels received globally:', data.sourceName, data.levels);
+              }
+              
+              const currentLevels = globalStateService.getAudioLevels();
+              globalStateService.updateOBSState({
+                audioLevels: {
+                  ...currentLevels,
+                  [data.sourceName]: data.levels
+                }
+              });
+            });
+            
+            obsWebSocketService.onVolumeChanged((data) => {
+              console.log('App: OBS volume changed globally:', data);
+              const currentSources = globalStateService.getAudioSources();
+              const updatedSources = currentSources.map(source => 
+                source.name === data.sourceName 
+                  ? { ...source, volumeDb: data.volumeDb, volume: data.volume }
+                  : source
+              );
+              globalStateService.updateOBSState({ sources: updatedSources });
+            });
+            
+            obsWebSocketService.onMuteChanged((data) => {
+              console.log('App: OBS mute changed globally:', data);
+              const currentSources = globalStateService.getAudioSources();
+              const updatedSources = currentSources.map(source => 
+                source.name === data.sourceName 
+                  ? { ...source, muted: data.muted }
+                  : source
+              );
+              globalStateService.updateOBSState({ sources: updatedSources });
+            });
+            
+            // Connect to OBS
+            await obsWebSocketService.connect(
+              settings.obsWebSocketHost,
+              settings.obsWebSocketPort,
+              settings.obsWebSocketPassword
+            );
+            
+            console.log('App: OBS WebSocket initialized and registered globally');
+          } catch (error) {
+            console.log('App: OBS WebSocket not available:', error.message);
+            globalStateService.updateOBSState({ connected: false });
           }
         }
         
@@ -119,19 +263,6 @@ function App() {
             await obsService.startServer(settings.obsPort);
           } catch (error) {
             console.log('OBS service not available:', error.message);
-          }
-        }
-
-        // Initialize OBS WebSocket if enabled
-        if (settings.obsWebSocketEnabled) {
-          try {
-            await obsWebSocketService.connect(
-              settings.obsWebSocketHost,
-              settings.obsWebSocketPort,
-              settings.obsWebSocketPassword
-            );
-          } catch (error) {
-            console.log('OBS WebSocket not available:', error.message);
           }
         }
 
@@ -153,6 +284,7 @@ function App() {
         audioService.setVolume(volume);
 
         setIsLoading(false);
+        console.log('App: Global initialization completed');
       } catch (error) {
         console.error('Failed to initialize app:', error);
         setIsLoading(false);
@@ -167,7 +299,7 @@ function App() {
       try {
         obsService.stopServer();
         obsWebSocketService.destroy();
-        // Don't destroy MIDI service as it's used globally
+        globalStateService.destroy();
       } catch (error) {
         console.log('Error during cleanup:', error.message);
       }

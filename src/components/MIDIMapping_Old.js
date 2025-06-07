@@ -10,10 +10,9 @@ import {
   Volume2,
   Zap,
   Gamepad2,
-  Activity,
-  Eye
+  Activity
 } from 'lucide-react';
-import globalStateService from '../services/globalStateService';
+import midiService from '../services/midiService';
 
 const MIDIMapping = () => {
   const [mappings, setMappings] = useState({});
@@ -25,7 +24,6 @@ const MIDIMapping = () => {
   const [editingMapping, setEditingMapping] = useState(null);
   const [showAddMapping, setShowAddMapping] = useState(false);
   const [lastMIDIMessage, setLastMIDIMessage] = useState(null);
-  const [audioMappings, setAudioMappings] = useState({});
   
   const [newMapping, setNewMapping] = useState({
     key: '',
@@ -56,98 +54,94 @@ const MIDIMapping = () => {
   ];
 
   useEffect(() => {
-    console.log('MIDIMapping: Initializing as MIDI Master with GlobalStateService');
-    
-    // Load initial state from GlobalStateService
-    const midiState = globalStateService.getMIDIState();
-    const allMIDIMappings = globalStateService.getAllMIDIMappings();
-    const audioSourceMappings = globalStateService.getAudioSourceMappings();
-    
-    setAvailableDevices(midiState.devices);
-    setLastMIDIMessage(midiState.lastActivity);
-    setMappings(allMIDIMappings);
-    setAudioMappings(audioSourceMappings);
-    
-    console.log('MIDIMapping: Initial state loaded:', {
-      midiConnected: midiState.connected,
-      midiMappingsCount: Object.keys(allMIDIMappings).length,
-      audioMappingsCount: Object.keys(audioSourceMappings).length,
-      devicesCount: midiState.devices.inputs.length
-    });
-    
-    // Subscribe to global state changes
-    const handleMIDIStateChange = (newState) => {
-      console.log('MIDIMapping: MIDI state changed:', newState);
-      setAvailableDevices(newState.devices);
-      setLastMIDIMessage(newState.lastActivity);
-    };
-    
-    const handleMappingsChange = (data) => {
-      console.log('MIDIMapping: Mappings changed:', data);
-      if (data.type === 'midi') {
-        setMappings(data.mappings);
-      } else if (data.type === 'audio') {
-        setAudioMappings(data.mappings);
-      }
-    };
-    
-    const handleMIDILearningCompleted = (data) => {
-      console.log('MIDIMapping: MIDI learning completed:', data);
-      if (learningMode && learningTarget) {
-        const midiKey = data.message.note.toString();
-        handleLearnComplete(midiKey, data.message);
-      }
-    };
-    
-    const handleMIDILearningStopped = () => {
-      console.log('MIDIMapping: MIDI learning stopped');
-      setLearningMode(false);
-      setLearningTarget(null);
-    };
-    
-    // Register callbacks
-    globalStateService.on('midiStateChanged', handleMIDIStateChange);
-    globalStateService.on('mappingsChanged', handleMappingsChange);
-    globalStateService.on('midiLearningCompleted', handleMIDILearningCompleted);
-    globalStateService.on('midiLearningStopped', handleMIDILearningStopped);
-    
-    // Auto-select devices if available
-    if (midiState.devices.inputs.length > 0 && !selectedInput) {
-      const firstInput = midiState.devices.inputs[0];
-      setSelectedInput(firstInput.id);
-      selectInputDevice(firstInput.id);
-    }
-    
-    if (midiState.devices.outputs.length > 0 && !selectedOutput) {
-      const firstOutput = midiState.devices.outputs[0];
-      setSelectedOutput(firstOutput.id);
-      selectOutputDevice(firstOutput.id);
-    }
-    
-    // Cleanup
-    return () => {
-      globalStateService.off('midiStateChanged', handleMIDIStateChange);
-      globalStateService.off('mappingsChanged', handleMappingsChange);
-      globalStateService.off('midiLearningCompleted', handleMIDILearningCompleted);
-      globalStateService.off('midiLearningStopped', handleMIDILearningStopped);
-    };
-  }, [learningMode, learningTarget, selectedInput, selectedOutput]);
+    initializeMIDI();
+    loadMappings();
+    loadDevices();
 
-  const selectInputDevice = (deviceId) => {
-    setSelectedInput(deviceId);
-    const midiService = globalStateService.services.midi;
-    if (midiService) {
-      midiService.selectInputDevice(deviceId);
-      console.log('MIDIMapping: Selected input device:', deviceId);
+    // Setup MIDI learning callbacks
+    midiService.addCallback('midiMessage', handleMIDIMessage);
+    midiService.addCallback('midiLearning', handleMIDILearning);
+
+    return () => {
+      midiService.removeCallback('midiMessage', handleMIDIMessage);
+      midiService.removeCallback('midiLearning', handleMIDILearning);
+    };
+  }, []);
+
+  const initializeMIDI = async () => {
+    try {
+      // Check if MIDI is already initialized globally
+      if (midiService.midiAccess || midiService.connected) {
+        console.log('MIDIMapping: MIDI already initialized globally, reusing connection');
+        return;
+      }
+      
+      console.log('MIDIMapping: MIDI not initialized, starting local initialization...');
+      await midiService.initialize();
+      console.log('MIDIMapping: MIDI Service initialized locally');
+    } catch (error) {
+      console.error('MIDIMapping: MIDI initialization failed:', error);
     }
   };
 
-  const selectOutputDevice = (deviceId) => {
-    setSelectedOutput(deviceId);
-    const midiService = globalStateService.services.midi;
-    if (midiService) {
-      midiService.selectOutputDevice(deviceId);
-      console.log('MIDIMapping: Selected output device:', deviceId);
+  const loadDevices = () => {
+    try {
+      const devices = midiService.getAvailableDevices();
+      setAvailableDevices(devices);
+      console.log('MIDIMapping: Available devices loaded:', devices);
+      
+      // Auto-select first available devices if none selected
+      if (!selectedInput && devices.inputs.length > 0) {
+        setSelectedInput(devices.inputs[0].id);
+        midiService.selectInputDevice(devices.inputs[0].id);
+      }
+      if (!selectedOutput && devices.outputs.length > 0) {
+        setSelectedOutput(devices.outputs[0].id);
+        midiService.selectOutputDevice(devices.outputs[0].id);
+      }
+    } catch (error) {
+      console.error('MIDIMapping: Failed to load devices:', error);
+    }
+  };
+
+  const loadMappings = () => {
+    const allMappings = midiService.getAllMappings();
+    setMappings(allMappings);
+    console.log('MIDIMapping: Mappings loaded:', Object.keys(allMappings).length, 'mappings');
+  };
+
+  const handleMIDIMessage = (message) => {
+    setLastMIDIMessage(message);
+    console.log('MIDIMapping: Received MIDI message:', message);
+  };
+
+  const handleMIDILearning = (message) => {
+    console.log('MIDIMapping: Received MIDI learning message:', message);
+    
+    if (learningMode && learningTarget) {
+      console.log('MIDIMapping: Learning mode active, processing message...');
+      
+      // Erweiterte Message-Type-Unterstützung für Learning
+      let key = null;
+      
+      if (message.type === 'controlChange') {
+        key = message.note.toString();
+      } else if (message.type === 'noteOn') {
+        key = `note_${message.note}`;
+      } else if (message.type === 'noteOff') {
+        key = `note_${message.note}`;
+      } else if (message.type === 'programChange') {
+        key = `program_${message.note}`;
+      } else if (message.type === 'pitchBend') {
+        key = `pitch_${message.channel}`;
+      }
+      
+      if (key) {
+        console.log('MIDIMapping: Generated key:', key, 'from message type:', message.type);
+        handleLearnComplete(key, message);
+      } else {
+        console.log('MIDIMapping: Unsupported message type for learning:', message.type);
+      }
     }
   };
 
@@ -156,7 +150,27 @@ const MIDIMapping = () => {
     setLearningMode(true);
     setLearningTarget(target);
     
-    const success = globalStateService.startMIDILearning(`MIDIMapping_${target}`);
+    // Starte den Service-Learning-Modus
+    const success = midiService.startLearning((message) => {
+      console.log('MIDIMapping: Service learning callback triggered:', message);
+      
+      // Generate key from message
+      let key = null;
+      if (message.type === 'controlChange') {
+        key = message.note.toString();
+      } else if (message.type === 'noteOn') {
+        key = `note_${message.note}`;
+      } else if (message.type === 'noteOff') {
+        key = `note_${message.note}`;
+      } else if (message.type === 'programChange') {
+        key = `program_${message.note}`;
+      }
+      
+      if (key) {
+        handleLearnComplete(key, message);
+      }
+    });
+    
     if (!success) {
       console.error('MIDIMapping: Failed to start learning');
       setLearningMode(false);
@@ -168,7 +182,7 @@ const MIDIMapping = () => {
     console.log('MIDIMapping: Stopping learning mode');
     setLearningMode(false);
     setLearningTarget(null);
-    globalStateService.stopMIDILearning();
+    midiService.stopLearning();
   };
 
   const handleLearnComplete = (key, message) => {
@@ -187,6 +201,9 @@ const MIDIMapping = () => {
         key: key
       }));
     }
+    
+    // Stop learning
+    stopLearning();
   };
 
   const saveMapping = (mappingData = newMapping) => {
@@ -203,8 +220,8 @@ const MIDIMapping = () => {
       max: parseInt(mappingData.max)
     };
 
-    // Use GlobalStateService to save mapping
-    globalStateService.setMIDIMapping(mappingData.key, mapping, 'MIDIMapping');
+    midiService.setMapping(mappingData.key, mapping);
+    loadMappings();
     
     if (editingMapping) {
       setEditingMapping(null);
@@ -223,23 +240,22 @@ const MIDIMapping = () => {
 
   const deleteMapping = (key) => {
     if (confirm('Delete this MIDI mapping?')) {
-      globalStateService.removeMIDIMapping(key);
+      midiService.removeMapping(key);
+      loadMappings();
     }
   };
 
   const testMapping = (key) => {
-    const midiService = globalStateService.services.midi;
-    if (midiService) {
-      midiService.testMapping(key, 64);
-    }
+    midiService.testMapping(key, 64); // Test mit Mittelwert
   };
 
   const resetToDefaults = () => {
     if (confirm('Reset all mappings to default values?')) {
-      // Clear all custom mappings through GlobalStateService
+      // Clear all custom mappings
       Object.keys(mappings).forEach(key => {
-        globalStateService.removeMIDIMapping(key);
+        midiService.removeMapping(key);
       });
+      loadMappings();
     }
   };
 
@@ -247,15 +263,10 @@ const MIDIMapping = () => {
     return mappingTypes.find(t => t.value === type) || mappingTypes[0];
   };
 
-  const getMappingSource = (mapping) => {
-    return mapping.source || 'Unknown';
-  };
-
   const renderMappingCard = (key, mapping) => {
     const typeInfo = getMappingTypeInfo(mapping.type);
     const Icon = typeInfo.icon;
     const isEditing = editingMapping?.originalKey === key;
-    const source = getMappingSource(mapping);
 
     return (
       <motion.div
@@ -265,9 +276,7 @@ const MIDIMapping = () => {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -20 }}
         className={`bg-gray-800 border-2 rounded-lg p-4 ${
-          isEditing ? 'border-blue-500' : 
-          source === 'AudioMixer' ? 'border-purple-500/50' :
-          'border-gray-600'
+          isEditing ? 'border-blue-500' : 'border-gray-600'
         }`}
       >
         {isEditing ? (
@@ -300,11 +309,6 @@ const MIDIMapping = () => {
                 <span className="text-sm font-medium text-white">
                   {key.startsWith('note_') ? `Note ${key.split('_')[1]}` : `CC ${key}`}
                 </span>
-                {source === 'AudioMixer' && (
-                  <span className="px-2 py-1 bg-purple-500/20 text-purple-400 text-xs rounded">
-                    Audio Mixer
-                  </span>
-                )}
               </div>
               
               <div className="flex space-x-1">
@@ -347,9 +351,6 @@ const MIDIMapping = () => {
                   Range: {mapping.min}-{mapping.max}
                 </div>
               )}
-              <div className="text-gray-500 mt-1">
-                Source: {source}
-              </div>
             </div>
           </div>
         )}
@@ -479,7 +480,7 @@ const MIDIMapping = () => {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-3">
           <Gamepad2 className="w-5 h-5 text-blue-400" />
-          <h3 className="text-lg font-semibold text-white">MIDI Mapping (Master Control)</h3>
+          <h3 className="text-lg font-semibold text-white">MIDI Mapping</h3>
         </div>
         
         <div className="flex space-x-2">
@@ -502,13 +503,16 @@ const MIDIMapping = () => {
 
       {/* Device Selection */}
       <div className="mb-4 p-3 bg-gray-800 border border-gray-600 rounded-lg">
-        <h4 className="text-sm font-medium text-white mb-3">MIDI Devices (Global)</h4>
+        <h4 className="text-sm font-medium text-white mb-3">MIDI Devices</h4>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-gray-400 mb-1">Input Device</label>
             <select
               value={selectedInput || ''}
-              onChange={(e) => selectInputDevice(e.target.value)}
+              onChange={(e) => {
+                setSelectedInput(e.target.value);
+                midiService.selectInputDevice(e.target.value);
+              }}
               className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm"
             >
               <option value="">No device selected</option>
@@ -524,7 +528,10 @@ const MIDIMapping = () => {
             <label className="block text-xs text-gray-400 mb-1">Output Device</label>
             <select
               value={selectedOutput || ''}
-              onChange={(e) => selectOutputDevice(e.target.value)}
+              onChange={(e) => {
+                setSelectedOutput(e.target.value);
+                midiService.selectOutputDevice(e.target.value);
+              }}
               className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm"
             >
               <option value="">No device selected</option>
@@ -537,32 +544,6 @@ const MIDIMapping = () => {
           </div>
         </div>
       </div>
-
-      {/* Audio Mixer Mappings Overview */}
-      {Object.keys(audioMappings).length > 0 && (
-        <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-          <h4 className="text-sm font-medium text-white mb-3">Audio Mixer Mappings</h4>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            {Object.entries(audioMappings).map(([sourceName, mappings]) => (
-              <div key={sourceName} className="flex items-center justify-between p-2 bg-gray-800/50 rounded">
-                <span className="text-gray-300 truncate">{sourceName}</span>
-                <div className="flex space-x-2">
-                  {mappings.volume && (
-                    <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded">
-                      Vol: CC{mappings.volume}
-                    </span>
-                  )}
-                  {mappings.mute && (
-                    <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded">
-                      Mute: CC{mappings.mute}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Add New Mapping */}
       <AnimatePresence>
@@ -590,7 +571,7 @@ const MIDIMapping = () => {
 
       {/* Current Mappings */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-white">All MIDI Mappings</h4>
+        <h4 className="text-sm font-medium text-white">Current Mappings</h4>
         
         <AnimatePresence>
           {Object.entries(mappings).map(([key, mapping]) => 
@@ -602,7 +583,7 @@ const MIDIMapping = () => {
           <div className="text-center py-8 text-gray-400">
             <Gamepad2 className="w-12 h-12 mx-auto mb-3 opacity-50" />
             <p>No MIDI mappings configured</p>
-            <p className="text-xs mt-1">Click "+" to add your first mapping or use Audio Mixer to learn controls</p>
+            <p className="text-xs mt-1">Click "+" to add your first mapping</p>
           </div>
         )}
       </div>
@@ -611,7 +592,7 @@ const MIDIMapping = () => {
       {lastMIDIMessage && (
         <div className="mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-green-400 font-medium">Last MIDI Message (Global)</span>
+            <span className="text-xs text-green-400 font-medium">Last MIDI Message</span>
             <span className="text-xs text-gray-400">
               {new Date(lastMIDIMessage.timestamp).toLocaleTimeString()}
             </span>
