@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mood Music - Improved OBS Display</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+            background: transparent;
+            overflow: hidden;
+            width: 800px;
+            height: 200px;
+            position: relative;
+        }
+
+        .song-display {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
+            overflow: hidden;
+            opacity: 0;
+            transform: translateY(40px);
+            transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .song-display.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(25px) brightness(0.4) saturate(1.2);
+            transform: scale(1.2);
+            transition: all 1500ms ease;
+        }
+
+        .mood-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.7;
+            background: linear-gradient(135deg, #4ade8040, #3b82f640);
+            transition: all 1500ms ease;
+            mix-blend-mode: overlay;
+        }
+
+        .content {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            height: 100%;
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .cover {
+            width: 140px;
+            height: 140px;
+            border-radius: 12px;
+            overflow: hidden;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #333, #555);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            transition: all 0.4s ease;
+        }
+
+        .cover:hover {
+            transform: scale(1.05);
+        }
+
+        .cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: all 0.6s ease;
+        }
+
+        .cover-placeholder {
+            color: #888;
+            font-size: 32px;
+            opacity: 0.6;
+        }
+
+        .info {
+            margin-left: 32px;
+            color: white;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            line-height: 1.2;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            animation: fadeInUp 0.8s ease 0.2s both;
+        }
+
+        .artist {
+            font-size: 18px;
+            opacity: 0.9;
+            margin-bottom: 12px;
+            font-weight: 500;
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+            animation: fadeInUp 0.8s ease 0.4s both;
+        }
+
+        .album {
+            font-size: 14px;
+            opacity: 0.7;
+            font-style: italic;
+            animation: fadeInUp 0.8s ease 0.6s both;
+        }
+
+        .mood-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            color: white;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            animation: fadeInDown 0.8s ease 0.8s both;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .wave-animation {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 8px;
+            background: linear-gradient(90deg, transparent, currentColor, transparent);
+            opacity: 0.6;
+            animation: wave 2s ease-in-out infinite;
+        }
+
+        .now-playing {
+            position: absolute;
+            top: -30px;
+            left: 24px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.8);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+            animation: fadeInDown 0.8s ease both;
+        }
+
+        .debug-status {
+            position: absolute;
+            bottom: 4px;
+            left: 4px;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            background: rgba(0, 0, 0, 0.4);
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            animation: fadeInUp 0.8s ease 1s both;
+        }
+
+        .connection-indicator {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ef4444;
+            transition: all 0.3s ease;
+        }
+
+        .connection-indicator.connected {
+            background: #22c55e;
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
+        }
+
+        .connection-indicator.searching {
+            background: #f59e0b;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes wave {
+            0%, 100% {
+                transform: translateX(-100%);
+            }
+            50% {
+                transform: translateX(100%);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.7;
+            }
+            50% {
+                transform: scale(1.02);
+                opacity: 0.9;
+            }
+        }
+
+        @keyframes pulse-fast {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.8;
+            }
+            50% {
+                transform: scale(1.04);
+                opacity: 1;
+            }
+        }
+
+        @keyframes glow {
+            0%, 100% {
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.1);
+            }
+            50% {
+                box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4), 0 0 30px rgba(255, 255, 255, 0.2);
+            }
+        }
+
+        .pulse-slow {
+            animation: pulse 3s ease-in-out infinite;
+        }
+        
+        .pulse-normal {
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        .pulse-fast {
+            animation: pulse-fast 1s ease-in-out infinite;
+        }
+
+        .glow-effect {
+            animation: glow 3s ease-in-out infinite;
+        }
+
+        .mood-energetic .mood-overlay {
+            animation: pulse-fast 1.5s ease-in-out infinite;
+        }
+
+        .mood-calm .mood-overlay {
+            animation: pulse 4s ease-in-out infinite;
+        }
+
+        .mood-dark .mood-overlay {
+            animation: glow 5s ease-in-out infinite;
+        }
+
+        @media (max-width: 600px) {
+            .cover {
+                width: 100px;
+                height: 100px;
+            }
+            .info {
+                margin-left: 20px;
+            }
+            .title {
+                font-size: 22px;
+            }
+            .artist {
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="songDisplay" class="song-display">
+        <div class="connection-indicator" id="connectionIndicator"></div>
+        <div class="now-playing">♪ Now Playing</div>
+        <div id="background" class="background"></div>
+        <div id="moodOverlay" class="mood-overlay"></div>
+        <div class="content">
+            <div class="cover">
+                <img id="coverImage" src="" alt="Album Cover" style="display: none;">
+                <div id="coverPlaceholder" class="cover-placeholder">♪</div>
+            </div>
+            <div class="info">
+                <div id="songTitle" class="title">Mood Music</div>
+                <div id="artistName" class="artist">Suche Verbindung...</div>
+                <div id="albumName" class="album" style="display: none;"></div>
+            </div>
+        </div>
+        <div id="moodIndicator" class="mood-indicator" style="display: none;"></div>
+        <div id="waveAnimation" class="wave-animation" style="display: none;"></div>
+        <div id="debugStatus" class="debug-status">Initialisiere...</div>
+    </div>
+
+    <script>
+        let currentSong = null;
+        let currentMood = null;
+        let lastDataTimestamp = 0;
+        let isVisible = false;
+        let loadAttempts = 0;
+        let connectionStatus = 'searching';
+        let helpShown = false;
+
+        const maxLoadAttempts = 25;
+
+        // UI-Updates
+        function updateDebugInfo(message) {
+            console.log('🎵 OBS Display:', message);
+            
+            const statusEl = document.getElementById('debugStatus');
+            if (statusEl) {
+                statusEl.textContent = message;
+            }
+        }
+
+        function updateConnectionIndicator(status) {
+            const indicator = document.getElementById('connectionIndicator');
+            if (indicator) {
+                indicator.className = 'connection-indicator ' + status;
+            }
+            connectionStatus = status;
+        }
+
+        // Hauptfunktion zum Laden der Daten
+        async function loadDisplayData() {
+            loadAttempts++;
+            
+            try {
+                // Methode 1: LocalStorage (HAUPTQUELLE - funktioniert immer)
+                try {
+                    const data = localStorage.getItem('obs-display-data');
+                    if (data) {
+                        const parsed = JSON.parse(data);
+                        if (parsed && parsed.timestamp && parsed.timestamp > lastDataTimestamp) {
+                            lastDataTimestamp = parsed.timestamp;
+                            updateDisplay(parsed);
+                            updateDebugInfo('LocalStorage ✅ ' + new Date(parsed.timestamp).toLocaleTimeString());
+                            updateConnectionIndicator('connected');
+                            loadAttempts = 0; // Reset bei erfolgreichem Load
+                            return true;
+                        }
+                    }
+                } catch (storageError) {
+                    // LocalStorage nicht verfügbar
+                }
+
+                // Methode 2: HTTP Server (wenn verfügbar)
+                if (window.location.protocol !== 'file:') {
+                    try {
+                        const response = await fetch('/obs-data.json?t=' + Date.now());
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data && data.timestamp && data.timestamp > lastDataTimestamp) {
+                                lastDataTimestamp = data.timestamp;
+                                updateDisplay(data);
+                                updateDebugInfo('HTTP Server ✅ ' + new Date(data.timestamp).toLocaleTimeString());
+                                updateConnectionIndicator('connected');
+                                loadAttempts = 0;
+                                return true;
+                            }
+                        }
+                    } catch (fetchError) {
+                        // HTTP Server nicht verfügbar
+                    }
+                }
+
+                // Methode 3: obs-data.json aus dem gleichen Verzeichnis (nur wenn NICHT file://)
+                if (window.location.protocol !== 'file:') {
+                    try {
+                        const response = await fetch('./obs-data.json?t=' + Date.now());
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data && data.timestamp && data.timestamp > lastDataTimestamp) {
+                                lastDataTimestamp = data.timestamp;
+                                updateDisplay(data);
+                                updateDebugInfo('JSON File ✅ ' + new Date(data.timestamp).toLocaleTimeString());
+                                updateConnectionIndicator('connected');
+                                loadAttempts = 0;
+                                return true;
+                            }
+                        }
+                    } catch (fetchError) {
+                        // JSON-Datei nicht gefunden
+                    }
+                }
+
+                // Keine neuen Daten gefunden - zeige passende Nachrichten
+                updateConnectionIndicator('searching');
+                
+                if (window.location.protocol === 'file:') {
+                    // File:// Modus - spezielle Meldungen
+                    if (loadAttempts <= 5) {
+                        updateDebugInfo('File-Modus: Verwende LocalStorage...');
+                        document.getElementById('artistName').textContent = 'Starte Mood Music & spiele Song ab';
+                    } else {
+                        updateDebugInfo('LocalStorage: Keine Daten');
+                        document.getElementById('artistName').textContent = 'Mood Music nicht verbunden';
+                        
+                        if (!helpShown) {
+                            helpShown = true;
+                            showFileProtocolHelp();
+                        }
+                    }
+                } else {
+                    // HTTP Modus - normale Meldungen
+                    if (loadAttempts <= 3) {
+                        updateDebugInfo('Suche obs-data.json...');
+                        document.getElementById('artistName').textContent = 'Suche Daten...';
+                    } else if (loadAttempts <= 8) {
+                        updateDebugInfo('obs-data.json nicht gefunden');
+                        document.getElementById('artistName').textContent = 'obs-data.json fehlt!';
+                    } else if (loadAttempts <= 15) {
+                        updateDebugInfo('Prüfe Datei-Verzeichnis...');
+                        document.getElementById('artistName').textContent = 'Dateien im selben Ordner?';
+                    } else if (loadAttempts <= maxLoadAttempts) {
+                        updateDebugInfo('Setup-Hilfe erforderlich');
+                        document.getElementById('artistName').textContent = 'Setup-Hilfe in Console';
+                        
+                        if (!helpShown) {
+                            helpShown = true;
+                            showSetupHelp();
+                        }
+                    } else {
+                        updateDebugInfo('Warte auf obs-data.json');
+                        document.getElementById('artistName').textContent = 'Warte auf Daten...';
+                    }
+                }
+
+            } catch (error) {
+                updateDebugInfo('Verbindungsfehler');
+                updateConnectionIndicator('searching');
+                console.error('Fehler beim Laden der OBS Daten:', error);
+            }
+            
+            return false;
+        }
+
+        function showFileProtocolHelp() {
+            console.log('%c📱 OBS File-Modus Hilfe:', 'color: #f59e0b; font-weight: bold; font-size: 14px;');
+            console.log('%cℹ️ Info:', 'color: #3b82f6; font-weight: bold;');
+            console.log('   Du verwendest die HTML-Datei als lokale Datei (file://).');
+            console.log('   Das ist OK! Die Verbindung funktioniert über LocalStorage.');
+            console.log('');
+            console.log('%c✅ So funktioniert es:', 'color: #22c55e; font-weight: bold;');
+            console.log('   1. Mood Music starten');
+            console.log('   2. Einen Song abspielen');
+            console.log('   3. Die Anzeige wird automatisch aktualisiert');
+            console.log('');
+            console.log('%c🔄 Aktualisierung:', 'color: #8b5cf6; font-weight: bold;');
+            console.log('   Bei jedem Songwechsel in Mood Music wird LocalStorage aktualisiert.');
+            console.log('   Diese HTML-Datei liest die Daten automatisch aus LocalStorage.');
+            console.log('');
+            console.log('%c💡 Tipp:', 'color: #f59e0b; font-weight: bold;');
+            console.log('   Beide Apps (Mood Music + OBS) müssen im gleichen Browser laufen!');
+        }
+
+        function showSetupHelp() {
+            console.log('%c🎵 OBS Setup Hilfe:', 'color: #4ade80; font-weight: bold; font-size: 14px;');
+            console.log('%c✅ Schritt 1: Dateien vorbereiten', 'color: #3b82f6; font-weight: bold;');
+            console.log('   • obs-data.json und HTML-Datei downloaden');
+            console.log('   • Beide Dateien in den SELBEN Ordner legen');
+            console.log('');
+            console.log('%c✅ Schritt 2: OBS einrichten', 'color: #3b82f6; font-weight: bold;');
+            console.log('   • Browser Source hinzufügen');
+            console.log('   • Lokale Datei: HTML-Datei auswählen');
+            console.log('   • Breite: 800, Höhe: 200');
+            console.log('   • "Shutdown source when not visible" DEAKTIVIEREN');
+            console.log('');
+            console.log('%c✅ Schritt 3: Testen', 'color: #3b82f6; font-weight: bold;');
+            console.log('   • Song in Mood Music abspielen');
+            console.log('   • obs-data.json wird automatisch aktualisiert');
+            console.log('   • Browser Source in OBS refreshen falls nötig');
+            console.log('');
+            console.log('%c💡 Tipp:', 'color: #f59e0b; font-weight: bold;');
+            console.log('   Die obs-data.json aktualisiert sich automatisch bei jedem Songwechsel!');
+            console.log('   Beide Dateien müssen im EXAKT GLEICHEN Verzeichnis liegen.');
+        }
+
+        function updateDisplay(data) {
+            const { song, mood, settings, showDisplay } = data;
+            
+            console.log('🎵 Display update:', { 
+                song: song?.title, 
+                mood: mood?.name, 
+                showDisplay,
+                timestamp: data.timestamp 
+            });
+            
+            // Prüfe auf neuen Song
+            const isNewSong = !currentSong || 
+                currentSong.id !== song?.id || 
+                currentSong.title !== song?.title;
+
+            currentSong = song;
+            currentMood = mood;
+
+            if (song && mood && showDisplay) {
+                updateContent(song, mood);
+                updateMoodStyling(mood);
+                
+                if (isNewSong || !isVisible) {
+                    showDisplayInternal();
+                }
+            } else if (!showDisplay) {
+                hideDisplayInternal();
+            }
+        }
+
+        function updateContent(song, mood) {
+            document.getElementById('songTitle').textContent = song.title || 'Unbekannter Titel';
+            document.getElementById('artistName').textContent = song.artist || 'Unbekannter Künstler';
+            
+            const albumElement = document.getElementById('albumName');
+            if (song.album) {
+                albumElement.textContent = song.album;
+                albumElement.style.display = 'block';
+            } else {
+                albumElement.style.display = 'none';
+            }
+            
+            updateCover(song, mood);
+            
+            const moodIndicator = document.getElementById('moodIndicator');
+            moodIndicator.textContent = mood.name;
+            moodIndicator.style.display = 'block';
+        }
+
+        function updateCover(song, mood) {
+            const coverImg = document.getElementById('coverImage');
+            const coverPlaceholder = document.getElementById('coverPlaceholder');
+            const background = document.getElementById('background');
+            
+            let imageUsed = false;
+            
+            // Versuche Song-Cover zuerst
+            if (song.cover && song.cover !== 'null' && song.cover !== '' && !song.cover.startsWith('blob:')) {
+                coverImg.src = song.cover;
+                coverImg.style.display = 'block';
+                coverPlaceholder.style.display = 'none';
+                background.style.backgroundImage = `url(${song.cover})`;
+                imageUsed = true;
+            } 
+            // Mood-Background als Fallback
+            else if (mood.background && mood.background !== 'null' && mood.background !== '') {
+                coverImg.src = mood.background;
+                coverImg.style.display = 'block';
+                coverPlaceholder.style.display = 'none';
+                background.style.backgroundImage = `url(${mood.background})`;
+                imageUsed = true;
+            }
+            
+            if (!imageUsed) {
+                // Kein Bild verfügbar
+                coverImg.style.display = 'none';
+                coverPlaceholder.style.display = 'flex';
+                background.style.backgroundImage = 'none';
+            }
+        }
+
+        function updateMoodStyling(mood) {
+            const moodOverlay = document.getElementById('moodOverlay');
+            const moodIndicator = document.getElementById('moodIndicator');
+            const waveAnimation = document.getElementById('waveAnimation');
+            const songDisplay = document.getElementById('songDisplay');
+            
+            // Entferne bestehende Mood-Klassen
+            songDisplay.classList.remove('mood-energetic', 'mood-calm', 'mood-dark');
+            moodOverlay.classList.remove('pulse-slow', 'pulse-normal', 'pulse-fast');
+            
+            if (mood.color) {
+                const moodColor = mood.color;
+                moodOverlay.style.background = `linear-gradient(135deg, ${moodColor}40, ${moodColor}20)`;
+                moodIndicator.style.background = `${moodColor}60`;
+                moodIndicator.style.borderColor = `${moodColor}80`;
+                waveAnimation.style.color = moodColor;
+            }
+            
+            // Mood-basierte Animationen
+            if (mood.pulseSpeed) {
+                if (mood.pulseSpeed < 1.5) {
+                    moodOverlay.classList.add('pulse-fast');
+                    songDisplay.classList.add('mood-energetic');
+                } else if (mood.pulseSpeed > 2.5) {
+                    moodOverlay.classList.add('pulse-slow');
+                    songDisplay.classList.add('mood-calm');
+                } else {
+                    moodOverlay.classList.add('pulse-normal');
+                }
+            }
+            
+            // Mood-Intensitäts-Effekte
+            if (mood.intensity === 'extreme') {
+                waveAnimation.style.display = 'block';
+                songDisplay.classList.add('mood-energetic');
+            } else if (mood.intensity === 'subtle') {
+                songDisplay.classList.add('mood-calm');
+            } else if (mood.intensity === 'dark') {
+                songDisplay.classList.add('mood-dark');
+            }
+        }
+
+        function showDisplayInternal() {
+            const display = document.getElementById('songDisplay');
+            display.classList.add('visible');
+            isVisible = true;
+            console.log('🎵 Display wird angezeigt');
+        }
+
+        function hideDisplayInternal() {
+            const display = document.getElementById('songDisplay');
+            display.classList.remove('visible');
+            isVisible = false;
+            console.log('🎵 Display wird ausgeblendet');
+        }
+
+        // Initialisierung
+        updateDebugInfo('Initialisiere...');
+        updateConnectionIndicator('searching');
+        
+        // Erste Datenladung
+        loadDisplayData();
+        
+        // Regelmäßige Updates alle 3 Sekunden (weniger aggressive Prüfung)
+        setInterval(loadDisplayData, 3000);
+        
+        // Bei Visibility-Änderungen auch prüfen
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                loadDisplayData();
+            }
+        });
+        
+        // Beim Fenster-Focus auch prüfen
+        window.addEventListener('focus', function() {
+            loadDisplayData();
+        });
+        
+        console.log('🎵 Improved Mood Music OBS Display geladen und bereit!');
+        console.log('📍 Suche nach obs-data.json im selben Verzeichnis...');
+    </script>
+</body>
+</html>

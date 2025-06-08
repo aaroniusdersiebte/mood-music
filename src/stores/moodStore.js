@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import obsWebSocketService from '../services/obsWebSocketService';
 
 const useMoodStore = create(
   persist(
@@ -51,6 +52,11 @@ const useMoodStore = create(
         obsSongTextSource: 'Current Song',
         obsSongTemplate: 'Now Playing: {title}\nArtist: {artist}\nMood: {mood}',
         obsAlwaysShow: false,
+        obsDisplayDuration: 8000,
+        obsPreDisplayDuration: 2000,
+        obsShowCover: true,
+        obsAnimationStyle: 'slide',
+        obsMoodTransitionDuration: 1500,
         
         // MIDI Settings
         midiEnabled: false,
@@ -87,12 +93,25 @@ const useMoodStore = create(
             [...mood.songs].sort(() => Math.random() - 0.5) : 
             mood.songs;
           
+          const newCurrentSong = shuffledSongs[0] || null;
+          
           set({
             activeMood: moodId,
             queue: shuffledSongs,
             currentIndex: 0,
-            currentSong: shuffledSongs[0] || null
+            currentSong: newCurrentSong
           });
+          
+          // Update OBS display when mood changes
+          if (newCurrentSong) {
+            const state = get();
+            // Enrich song data with mood background for OBS
+            const enrichedSong = {
+              ...newCurrentSong,
+              moodBackground: mood.background
+            };
+            obsWebSocketService.updateSongDisplay(enrichedSong, mood, state.settings);
+          }
         }
       },
       
@@ -113,40 +132,81 @@ const useMoodStore = create(
       })),
       
       // Player Actions
-      setCurrentSong: (song) => set({ currentSong: song }),
+      setCurrentSong: (song) => {
+        set({ currentSong: song });
+        
+        // Update OBS display when song changes
+        const state = get();
+        const currentMood = state.moods.find(m => m.id === state.activeMood);
+        if (song && currentMood) {
+          // Enrich song data with mood background for OBS
+          const enrichedSong = {
+            ...song,
+            moodBackground: currentMood.background
+          };
+          obsWebSocketService.updateSongDisplay(enrichedSong, currentMood, state.settings);
+        }
+      },
       setIsPlaying: (playing) => set({ isPlaying: playing }),
       setVolume: (volume) => set({ volume }),
       setShuffle: (shuffle) => set({ shuffle }),
       
       nextSong: () => {
-        const { queue, currentIndex, shuffle } = get();
+        const { queue, currentIndex, shuffle, activeMood, moods, settings } = get();
         if (queue.length === 0) return;
         
         let nextIndex = currentIndex + 1;
+        let newCurrentSong = null;
+        
         if (nextIndex >= queue.length) {
           nextIndex = 0;
           if (shuffle) {
             const shuffledQueue = [...queue].sort(() => Math.random() - 0.5);
-            set({ queue: shuffledQueue, currentIndex: 0, currentSong: shuffledQueue[0] });
-            return;
+            newCurrentSong = shuffledQueue[0];
+            set({ queue: shuffledQueue, currentIndex: 0, currentSong: newCurrentSong });
+          } else {
+            newCurrentSong = queue[nextIndex];
+            set({ currentIndex: nextIndex, currentSong: newCurrentSong });
           }
+        } else {
+          newCurrentSong = queue[nextIndex];
+          set({ currentIndex: nextIndex, currentSong: newCurrentSong });
         }
         
-        set({ 
-          currentIndex: nextIndex, 
-          currentSong: queue[nextIndex] 
-        });
+        // Update OBS display
+        const currentMood = moods.find(m => m.id === activeMood);
+        if (newCurrentSong && currentMood) {
+          // Enrich song data with mood background for OBS
+          const enrichedSong = {
+            ...newCurrentSong,
+            moodBackground: currentMood.background
+          };
+          obsWebSocketService.updateSongDisplay(enrichedSong, currentMood, settings);
+        }
       },
       
       prevSong: () => {
-        const { queue, currentIndex } = get();
+        const { queue, currentIndex, activeMood, moods, settings } = get();
         if (queue.length === 0) return;
         
         const prevIndex = currentIndex > 0 ? currentIndex - 1 : queue.length - 1;
+        const newCurrentSong = queue[prevIndex];
+        
         set({ 
           currentIndex: prevIndex, 
-          currentSong: queue[prevIndex] 
+          currentSong: newCurrentSong 
         });
+        
+        // Update OBS display
+        const currentMood = moods.find(m => m.id === activeMood);
+        if (newCurrentSong && currentMood) {
+          // Enrich song data with mood background for OBS
+          const enrichedSong = {
+            ...newCurrentSong,
+            moodBackground: currentMood.background
+          };
+          obsWebSocketService.updateSongDisplay(enrichedSong, currentMood, settings);
+        }
       },
       
       // Settings Actions

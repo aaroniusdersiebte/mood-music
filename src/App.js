@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useMoodStore from './stores/moodStore';
 import audioService from './services/audioService';
-import obsService from './services/obsService';
+// import obsService from './services/obsService'; // ❌ ENTFERNT
 import obsWebSocketService from './services/obsWebSocketService';
+// import obsBrowserRefresh from './services/obsBrowserRefresh'; // ❌ ENTFERNT
 import midiService from './services/midiService';
 import globalStateService from './services/globalStateService';
+// import integratedHTTPServer from './services/integratedHTTPServer'; // ❌ ENTFERNT
 import fileUtils from './utils/fileUtils';
 
 // Components
@@ -119,6 +121,15 @@ function App() {
         // Make GlobalStateService available globally for services
         window.globalStateService = globalStateService;
         
+        // Make useMoodStore globally available
+        window.useMoodStore = useMoodStore;
+        
+        // Make OBS services globally available
+        window.obsWebSocketService = obsWebSocketService;
+        // window.obsBrowserRefresh = obsBrowserRefresh; // ❌ ENTFERNT
+        
+        // ❌ HTTP Server komplett entfernt - verwende nur obsDataWriter
+        
         // Ensure data directories exist
         await fileUtils.ensureDataDirectories();
         
@@ -209,7 +220,7 @@ function App() {
             obsWebSocketService.onAudioLevels((data) => {
               // Only log when there's meaningful audio
               if (Math.max(data.levels.left, data.levels.right) > -50) {
-                console.log('App: Audio levels received globally:', data.sourceName, data.levels);
+                //console.log('App: Audio levels received globally:', data.sourceName, data.levels);
               }
               
               const currentLevels = globalStateService.getAudioLevels();
@@ -251,20 +262,17 @@ function App() {
             );
             
             console.log('App: OBS WebSocket initialized and registered globally');
+            
+            // 🎯 Browser Source Refresh ist jetzt direkt in obsWebSocketService integriert!
+            console.log('🎯 OBS Browser Source Refresh ist jetzt verfügbar!');
+            console.log('🧪 Test mit: window.obsWebSocketService.testBrowserSourceRefresh()');
           } catch (error) {
             console.log('App: OBS WebSocket not available:', error.message);
             globalStateService.updateOBSState({ connected: false });
           }
         }
         
-        // Start OBS service if configured
-        if (settings.obsPort) {
-          try {
-            await obsService.startServer(settings.obsPort);
-          } catch (error) {
-            console.log('OBS service not available:', error.message);
-          }
-        }
+        // ❌ OBS Service entfernt - verwende nur obsWebSocketService
 
         // Setup audio service callbacks
         audioService.onSongEndCallback(() => {
@@ -297,9 +305,15 @@ function App() {
     return () => {
       audioService.destroy();
       try {
-        obsService.stopServer();
+        // obsService.stopServer(); // ❌ ENTFERNT
         obsWebSocketService.destroy();
+        // obsBrowserRefresh.destroy(); // ❌ ENTFERNT
         globalStateService.destroy();
+        
+        // ❌ HTTP Server entfernt
+        // if (integratedHTTPServer.isServerRunning()) {
+        //   integratedHTTPServer.stop();
+        // }
       } catch (error) {
         console.log('Error during cleanup:', error.message);
       }
@@ -317,14 +331,22 @@ function App() {
             audioService.play();
           }
           
-          // Update OBS display via WebSocket
+          // 🎯 SINGLE UPDATE: OBS Display + Browser Source Refresh
           const currentMood = moods.find(m => m.id === activeMood);
           if (currentMood && settings.obsWebSocketEnabled) {
             try {
+              // Einziger Update-Aufruf - obsWebSocketService macht alles:
+              // 1. Schreibt OBS Data (LocalStorage)
+              // 2. Refreshed Browser Sources automatisch
               await obsWebSocketService.updateSongDisplay(currentSong, currentMood, settings);
+              
+              console.log('🎵 Song display updated + Browser sources refreshed automatically');
             } catch (error) {
               console.log('Failed to update OBS song display:', error.message);
             }
+          } else if (currentMood) {
+            // Fallback für wenn OBS WebSocket nicht aktiviert ist
+            console.log('⚠️ OBS WebSocket nicht aktiviert - aktiviere es in Settings für Browser Source Refresh');
           }
         } catch (error) {
           console.error('Failed to load song:', error);

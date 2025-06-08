@@ -51,7 +51,7 @@ const AudioMixer = () => {
     
     // Subscribe to global state changes
     const handleOBSStateChange = (newState) => {
-      console.log('AudioMixer: OBS state changed:', newState);
+      //console.log('AudioMixer: OBS state changed:', newState);
       setConnected(newState.connected);
       setAudioSources(newState.sources);
       setAudioLevels(newState.audioLevels);
@@ -272,19 +272,32 @@ const AudioMixer = () => {
       const newSet = new Set(prev);
       if (newSet.has(sourceName)) {
         newSet.delete(sourceName);
+        // 🚀 Benachrichtige GlobalStateService
+        globalStateService.setSourceHidden(sourceName, false);
       } else {
         newSet.add(sourceName);
+        // 🚀 Benachrichtige GlobalStateService  
+        globalStateService.setSourceHidden(sourceName, true);
       }
       return newSet;
     });
   };
 
   const showAllSources = () => {
+    // 🚀 Benachrichtige GlobalStateService für alle Sources
+    hiddenSources.forEach(sourceName => {
+      globalStateService.setSourceHidden(sourceName, false);
+    });
     setHiddenSources(new Set());
   };
 
   const hideAllSources = () => {
-    setHiddenSources(new Set(audioSources.map(s => s.name)));
+    const allSourceNames = audioSources.map(s => s.name);
+    // 🚀 Benachrichtige GlobalStateService für alle Sources
+    allSourceNames.forEach(sourceName => {
+      globalStateService.setSourceHidden(sourceName, true);
+    });
+    setHiddenSources(new Set(allSourceNames));
   };
 
   // Volume and Mute Control
@@ -610,7 +623,7 @@ const AudioMixer = () => {
 
       {/* Audio Sources */}
       {connected ? (
-        <div className="flex-1 overflow-y-auto max-h-96">
+        <div className="flex-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
           <div className="space-y-3">
             {audioSources.filter(source => !hiddenSources.has(source.name)).map((source) => (
               <motion.div
@@ -749,19 +762,6 @@ const AudioMixer = () => {
           <Headphones className="w-12 h-12 mx-auto mb-3 opacity-50" />
           <p>No audio sources found</p>
           <p className="text-xs mt-1">Make sure OBS has audio sources configured</p>
-        </div>
-      )}
-
-      {/* MIDI Info */}
-      {midiConnected && (
-        <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-          <div className="flex items-center space-x-2 text-blue-400 text-sm">
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-            <span>MIDI Controller Connected (Global)</span>
-          </div>
-          <p className="text-xs text-blue-300 mt-1">
-            Learn volume and mute controls for each source. All mappings are managed globally.
-          </p>
         </div>
       )}
 

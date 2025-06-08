@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mood Music - Self-Contained OBS Display</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+            background: transparent;
+            overflow: hidden;
+            width: 800px;
+            height: 200px;
+            position: relative;
+        }
+
+        .song-display {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
+            overflow: hidden;
+            opacity: 1;
+            transform: translateY(0);
+            transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .song-display.hidden {
+            opacity: 0;
+            transform: translateY(40px);
+        }
+
+        .background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            background-size: cover;
+            background-position: center;
+            filter: blur(25px) brightness(0.4) saturate(1.2);
+            transform: scale(1.2);
+            transition: all 1500ms ease;
+        }
+
+        .mood-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.7;
+            background: linear-gradient(135deg, #4ade8040, #3b82f640);
+            transition: all 1500ms ease;
+            mix-blend-mode: overlay;
+            animation: pulse 4s ease-in-out infinite;
+        }
+
+        .content {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            height: 100%;
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .cover {
+            width: 140px;
+            height: 140px;
+            border-radius: 12px;
+            overflow: hidden;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #333, #555);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            transition: all 0.4s ease;
+        }
+
+        .cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: all 0.6s ease;
+        }
+
+        .cover-placeholder {
+            color: #4ade80;
+            font-size: 48px;
+            opacity: 0.8;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        .info {
+            margin-left: 32px;
+            color: white;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            line-height: 1.2;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            animation: fadeInUp 0.8s ease 0.2s both;
+        }
+
+        .artist {
+            font-size: 18px;
+            opacity: 0.9;
+            margin-bottom: 12px;
+            font-weight: 500;
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+            animation: fadeInUp 0.8s ease 0.4s both;
+        }
+
+        .album {
+            font-size: 14px;
+            opacity: 0.7;
+            font-style: italic;
+            animation: fadeInUp 0.8s ease 0.6s both;
+        }
+
+        .mood-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            color: white;
+            background: rgba(74, 222, 128, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(74, 222, 128, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            animation: fadeInDown 0.8s ease 0.8s both;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .now-playing {
+            position: absolute;
+            top: -30px;
+            left: 24px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.8);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+            animation: fadeInDown 0.8s ease both;
+        }
+
+        .connection-status {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            background: rgba(0, 0, 0, 0.4);
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .connection-indicator {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #22c55e;
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
+            animation: pulse-indicator 2s ease-in-out infinite;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.7; }
+            50% { transform: scale(1.02); opacity: 0.9; }
+        }
+
+        @keyframes pulse-indicator {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .update-animation {
+            animation: updateFlash 0.5s ease-in-out;
+        }
+
+        @keyframes updateFlash {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div id="songDisplay" class="song-display">
+        <div class="connection-indicator"></div>
+        <div class="now-playing">♪ Mood Music Live</div>
+        <div id="background" class="background"></div>
+        <div id="moodOverlay" class="mood-overlay"></div>
+        <div class="content">
+            <div class="cover">
+                <img id="coverImage" src="" alt="Album Cover" style="display: none;">
+                <div id="coverPlaceholder" class="cover-placeholder">♪</div>
+            </div>
+            <div class="info">
+                <div id="songTitle" class="title">Mood Music</div>
+                <div id="artistName" class="artist">Bereit für LiveStream ✨</div>
+                <div id="albumName" class="album" style="display: none;"></div>
+            </div>
+        </div>
+        <div id="moodIndicator" class="mood-indicator">LIVE</div>
+        <div id="connectionStatus" class="connection-status">LocalStorage Verbindung</div>
+    </div>
+
+    <script>
+        let currentSong = null;
+        let lastDataTimestamp = 0;
+        let updateCount = 0;
+
+        // Hauptfunktion: Lädt Daten aus LocalStorage
+        function loadDisplayData() {
+            try {
+                // LocalStorage ist die EINZIGE Quelle - funktioniert immer in OBS
+                const data = localStorage.getItem('obs-display-data');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    if (parsed && parsed.timestamp && parsed.timestamp > lastDataTimestamp) {
+                        lastDataTimestamp = parsed.timestamp;
+                        updateDisplay(parsed);
+                        updateCount++;
+                        
+                        // Update-Animation
+                        const display = document.getElementById('songDisplay');
+                        display.classList.add('update-animation');
+                        setTimeout(() => display.classList.remove('update-animation'), 500);
+                        
+                        document.getElementById('connectionStatus').textContent = 
+                            `Updates: ${updateCount} | ${new Date(parsed.timestamp).toLocaleTimeString()}`;
+                        return true;
+                    }
+                }
+                
+                // Fallback: Zeige "Waiting" Status
+                if (updateCount === 0) {
+                    document.getElementById('artistName').textContent = 'Warte auf Mood Music...';
+                    document.getElementById('connectionStatus').textContent = 'Warte auf erste Daten';
+                }
+                
+            } catch (error) {
+                console.error('Fehler beim Laden der OBS Daten:', error);
+                document.getElementById('artistName').textContent = 'Verbindungsfehler';
+                document.getElementById('connectionStatus').textContent = 'LocalStorage Fehler';
+            }
+            return false;
+        }
+
+        function updateDisplay(data) {
+            const { song, mood, settings, showDisplay } = data;
+            
+            console.log('🎵 Song Update:', song?.title, 'Mood:', mood?.name);
+            
+            // Prüfe auf neuen Song
+            const isNewSong = !currentSong || 
+                currentSong.id !== song?.id || 
+                currentSong.title !== song?.title;
+
+            currentSong = song;
+
+            if (song && mood) {
+                updateContent(song, mood);
+                updateMoodStyling(mood);
+                
+                // Zeige immer an (da selbst-enthaltene Version)
+                showDisplay();
+            }
+        }
+
+        function updateContent(song, mood) {
+            document.getElementById('songTitle').textContent = song.title || 'Unbekannter Titel';
+            document.getElementById('artistName').textContent = song.artist || 'Unbekannter Künstler';
+            
+            const albumElement = document.getElementById('albumName');
+            if (song.album) {
+                albumElement.textContent = song.album;
+                albumElement.style.display = 'block';
+            } else {
+                albumElement.style.display = 'none';
+            }
+            
+            updateCover(song, mood);
+            
+            const moodIndicator = document.getElementById('moodIndicator');
+            moodIndicator.textContent = mood.name || 'LIVE';
+        }
+
+        function updateCover(song, mood) {
+            const coverImg = document.getElementById('coverImage');
+            const coverPlaceholder = document.getElementById('coverPlaceholder');
+            const background = document.getElementById('background');
+            
+            let imageUsed = false;
+            
+            // Versuche Song-Cover
+            if (song.cover && song.cover !== 'null' && song.cover !== '' && !song.cover.startsWith('blob:')) {
+                coverImg.src = song.cover;
+                coverImg.style.display = 'block';
+                coverPlaceholder.style.display = 'none';
+                background.style.backgroundImage = `url(${song.cover})`;
+                imageUsed = true;
+            } 
+            // Mood-Background als Fallback
+            else if (mood.background && mood.background !== 'null' && mood.background !== '') {
+                coverImg.src = mood.background;
+                coverImg.style.display = 'block';
+                coverPlaceholder.style.display = 'none';
+                background.style.backgroundImage = `url(${mood.background})`;
+                imageUsed = true;
+            }
+            
+            if (!imageUsed) {
+                coverImg.style.display = 'none';
+                coverPlaceholder.style.display = 'flex';
+                // Behalte Hintergrund-Gradient
+            }
+        }
+
+        function updateMoodStyling(mood) {
+            const moodOverlay = document.getElementById('moodOverlay');
+            const moodIndicator = document.getElementById('moodIndicator');
+            
+            if (mood.color) {
+                const moodColor = mood.color;
+                moodOverlay.style.background = `linear-gradient(135deg, ${moodColor}40, ${moodColor}20)`;
+                moodIndicator.style.background = `${moodColor}80`;
+                moodIndicator.style.borderColor = `${moodColor}`;
+                
+                // Passe Cover-Placeholder an Mood an
+                const placeholder = document.getElementById('coverPlaceholder');
+                placeholder.style.color = moodColor;
+            }
+            
+            // Mood-basierte Animationen
+            if (mood.pulseSpeed) {
+                const speed = mood.pulseSpeed;
+                if (speed < 1.5) {
+                    moodOverlay.style.animationDuration = '1s';
+                } else if (speed > 2.5) {
+                    moodOverlay.style.animationDuration = '6s';
+                } else {
+                    moodOverlay.style.animationDuration = '3s';
+                }
+            }
+        }
+
+        function showDisplay() {
+            const display = document.getElementById('songDisplay');
+            display.classList.remove('hidden');
+        }
+
+        function hideDisplay() {
+            const display = document.getElementById('songDisplay');
+            display.classList.add('hidden');
+        }
+
+        // Initialisierung
+        console.log('🎵 Self-Contained Mood Music OBS Display geladen!');
+        console.log('📍 Verwendet ausschließlich LocalStorage - keine CORS-Probleme!');
+        
+        // Erste Datenladung
+        loadDisplayData();
+        
+        // Updates alle 2 Sekunden
+        setInterval(loadDisplayData, 2000);
+        
+        // Bei Storage-Änderungen (falls im selben Browser-Kontext)
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'obs-display-data') {
+                loadDisplayData();
+            }
+        });
+        
+        // Bei Visibility-Änderungen
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                loadDisplayData();
+            }
+        });
+    </script>
+</body>
+</html>

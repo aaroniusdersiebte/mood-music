@@ -26,6 +26,7 @@ class GlobalStateService {
       obs: null,
       midi: null
     };
+    this.hiddenSources = new Set(); // Für Performance-Optimierung
     
     console.log('GlobalStateService: Initialized');
   }
@@ -63,7 +64,7 @@ class GlobalStateService {
   // State Updates
   updateOBSState(updates) {
     this.states.obs = { ...this.states.obs, ...updates };
-    console.log('GlobalStateService: OBS state updated:', updates);
+    //console.log('GlobalStateService: OBS state updated:', updates);
     this.triggerCallbacks('obsStateChanged', this.states.obs);
   }
 
@@ -424,6 +425,24 @@ class GlobalStateService {
 
   getAudioLevel(sourceName) {
     return this.states.obs.realTimeAudioLevels.get(sourceName);
+  }
+
+  // 🚀 Source Visibility Management (für Performance)
+  setSourceHidden(sourceName, hidden = true) {
+    if (hidden) {
+      this.hiddenSources.add(sourceName);
+    } else {
+      this.hiddenSources.delete(sourceName);
+    }
+    console.log(`GlobalStateService: Source ${sourceName} ${hidden ? 'hidden' : 'shown'} - Performance optimized`);
+  }
+
+  isSourceHidden(sourceName) {
+    return this.hiddenSources.has(sourceName);
+  }
+
+  getHiddenSources() {
+    return Array.from(this.hiddenSources);
   }
 
   // Event System

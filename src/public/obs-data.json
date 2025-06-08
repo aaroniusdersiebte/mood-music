@@ -1,0 +1,21 @@
+{
+  "song": {
+    "id": "demo-song-1",
+    "title": "HTTP Server Demo",
+    "artist": "Mood Music System",
+    "album": "Server Integration",
+    "cover": null
+  },
+  "mood": {
+    "name": "Connected",
+    "color": "#22c55e",
+    "pulseSpeed": 1.8,
+    "intensity": "moderate"
+  },
+  "settings": {
+    "obsAlwaysShow": true,
+    "obsShowCover": true
+  },
+  "showDisplay": true,
+  "timestamp": 1749324043392
+}

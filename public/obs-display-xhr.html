@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mood Music - OBS Optimized Display</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+            background: transparent;
+            overflow: hidden;
+            width: 800px;
+            height: 200px;
+            position: relative;
+        }
+
+        .song-display {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
+            overflow: hidden;
+            opacity: 0;
+            transform: translateY(40px);
+            transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .song-display.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(25px) brightness(0.4) saturate(1.2);
+            transform: scale(1.2);
+            transition: all 1500ms ease;
+        }
+
+        .mood-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.7;
+            background: linear-gradient(135deg, #4ade8040, #3b82f640);
+            transition: all 1500ms ease;
+            mix-blend-mode: overlay;
+        }
+
+        .content {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            height: 100%;
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .cover {
+            width: 140px;
+            height: 140px;
+            border-radius: 12px;
+            overflow: hidden;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #333, #555);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            transition: all 0.4s ease;
+        }
+
+        .cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: all 0.6s ease;
+        }
+
+        .cover-placeholder {
+            color: #888;
+            font-size: 32px;
+            opacity: 0.6;
+        }
+
+        .info {
+            margin-left: 32px;
+            color: white;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            line-height: 1.2;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            animation: fadeInUp 0.8s ease 0.2s both;
+        }
+
+        .artist {
+            font-size: 18px;
+            opacity: 0.9;
+            margin-bottom: 12px;
+            font-weight: 500;
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+            animation: fadeInUp 0.8s ease 0.4s both;
+        }
+
+        .album {
+            font-size: 14px;
+            opacity: 0.7;
+            font-style: italic;
+            animation: fadeInUp 0.8s ease 0.6s both;
+        }
+
+        .mood-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            color: white;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            animation: fadeInDown 0.8s ease 0.8s both;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .now-playing {
+            position: absolute;
+            top: -30px;
+            left: 24px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.8);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+            animation: fadeInDown 0.8s ease both;
+        }
+
+        .debug-status {
+            position: absolute;
+            bottom: 4px;
+            left: 4px;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            background: rgba(0, 0, 0, 0.4);
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .connection-indicator {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ef4444;
+            transition: all 0.3s ease;
+        }
+
+        .connection-indicator.connected {
+            background: #22c55e;
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
+        }
+
+        .connection-indicator.searching {
+            background: #f59e0b;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.7; }
+            50% { transform: scale(1.02); opacity: 0.9; }
+        }
+
+        @keyframes pulse-fast {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.04); opacity: 1; }
+        }
+
+        .pulse-slow { animation: pulse 3s ease-in-out infinite; }
+        .pulse-normal { animation: pulse 2s ease-in-out infinite; }
+        .pulse-fast { animation: pulse-fast 1s ease-in-out infinite; }
+
+        .mood-energetic .mood-overlay { animation: pulse-fast 1.5s ease-in-out infinite; }
+        .mood-calm .mood-overlay { animation: pulse 4s ease-in-out infinite; }
+        .mood-dark .mood-overlay { animation: pulse 5s ease-in-out infinite; }
+    </style>
+</head>
+<body>
+    <div id="songDisplay" class="song-display">
+        <div class="connection-indicator" id="connectionIndicator"></div>
+        <div class="now-playing">♪ Now Playing</div>
+        <div id="background" class="background"></div>
+        <div id="moodOverlay" class="mood-overlay"></div>
+        <div class="content">
+            <div class="cover">
+                <img id="coverImage" src="" alt="Album Cover" style="display: none;">
+                <div id="coverPlaceholder" class="cover-placeholder">♪</div>
+            </div>
+            <div class="info">
+                <div id="songTitle" class="title">Mood Music</div>
+                <div id="artistName" class="artist">Initialisiere...</div>
+                <div id="albumName" class="album" style="display: none;"></div>
+            </div>
+        </div>
+        <div id="moodIndicator" class="mood-indicator" style="display: none;"></div>
+        <div id="debugStatus" class="debug-status">Bereit für OBS...</div>
+    </div>
+
+    <script>
+        let currentSong = null;
+        let currentMood = null;
+        let lastDataTimestamp = 0;
+        let isVisible = false;
+        let loadAttempts = 0;
+        let connectionMethod = null;
+
+        function updateDebugInfo(message) {
+            console.log('🎵 OBS Display:', message);
+            const statusEl = document.getElementById('debugStatus');
+            if (statusEl) {
+                statusEl.textContent = message;
+            }
+        }
+
+        function updateConnectionIndicator(status) {
+            const indicator = document.getElementById('connectionIndicator');
+            if (indicator) {
+                indicator.className = 'connection-indicator ' + status;
+            }
+        }
+
+        // XMLHttpRequest für OBS Browser Sources (umgeht CORS)
+        function loadDataWithXHR(url, callback) {
+            const xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {
+                if (this.readyState === 4) {
+                    if (this.status === 200) {
+                        try {
+                            const data = JSON.parse(this.responseText);
+                            callback(null, data);
+                        } catch (error) {
+                            callback(error, null);
+                        }
+                    } else {
+                        callback(new Error(`HTTP ${this.status}`), null);
+                    }
+                }
+            };
+            xhr.open('GET', url, true);
+            xhr.send();
+        }
+
+        // Hauptfunktion zum Laden der Daten
+        function loadDisplayData() {
+            loadAttempts++;
+            
+            // Methode 1: LocalStorage (PRIMÄR)
+            try {
+                const data = localStorage.getItem('obs-display-data');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    if (parsed && parsed.timestamp && parsed.timestamp > lastDataTimestamp) {
+                        lastDataTimestamp = parsed.timestamp;
+                        updateDisplay(parsed);
+                        updateDebugInfo(`LocalStorage ✅ ${new Date(parsed.timestamp).toLocaleTimeString()}`);
+                        updateConnectionIndicator('connected');
+                        connectionMethod = 'LocalStorage';
+                        loadAttempts = 0;
+                        return;
+                    }
+                }
+            } catch (error) {
+                console.log('LocalStorage nicht verfügbar:', error);
+            }
+
+            // Methode 2: OBS-spezifische Datei-Zugriffe mit XMLHttpRequest
+            const filePaths = [
+                // OBS http://absolute/ Schema
+                `http://absolute/${window.location.pathname.replace(/[^/]*$/, '')}obs-data.json`,
+                // Relatives Verzeichnis
+                './obs-data.json',
+                // Vollpfad (falls im selben Ordner)
+                `${window.location.href.replace(/[^/]*$/, '')}obs-data.json`
+            ];
+
+            let methodIndex = 0;
+            function tryNextMethod() {
+                if (methodIndex >= filePaths.length) {
+                    // Alle Methoden fehlgeschlagen
+                    handleNoData();
+                    return;
+                }
+
+                const currentPath = filePaths[methodIndex];
+                loadDataWithXHR(currentPath + '?t=' + Date.now(), function(error, data) {
+                    if (!error && data && data.timestamp && data.timestamp > lastDataTimestamp) {
+                        lastDataTimestamp = data.timestamp;
+                        updateDisplay(data);
+                        updateDebugInfo(`File ✅ ${new Date(data.timestamp).toLocaleTimeString()}`);
+                        updateConnectionIndicator('connected');
+                        connectionMethod = 'XMLHttpRequest';
+                        loadAttempts = 0;
+                    } else {
+                        methodIndex++;
+                        tryNextMethod();
+                    }
+                });
+            }
+
+            tryNextMethod();
+        }
+
+        function handleNoData() {
+            updateConnectionIndicator('searching');
+            
+            if (loadAttempts <= 5) {
+                updateDebugInfo('Suche Datenquellen...');
+                document.getElementById('artistName').textContent = 'Lade Daten...';
+            } else if (loadAttempts <= 15) {
+                updateDebugInfo('Prüfe LocalStorage & Dateien...');
+                document.getElementById('artistName').textContent = 'Musik abspielen in Mood Music';
+            } else {
+                updateDebugInfo('Warte auf Daten...');
+                document.getElementById('artistName').textContent = 'Verbindung zu Mood Music';
+                
+                if (loadAttempts === 16) {
+                    showOBSHelp();
+                }
+            }
+        }
+
+        function showOBSHelp() {
+            console.log('%c🎵 OBS Verbindungs-Hilfe:', 'color: #4ade80; font-weight: bold; font-size: 14px;');
+            console.log('%c✅ Diese HTML-Datei versucht mehrere Verbindungsmethoden:', 'color: #3b82f6; font-weight: bold;');
+            console.log('   1. LocalStorage (funktioniert wenn Mood Music im gleichen Browser läuft)');
+            console.log('   2. http://absolute/ Schema (OBS-spezifisch)');
+            console.log('   3. Relative Datei-Pfade mit XMLHttpRequest');
+            console.log('');
+            console.log('%c💡 Lösungsvorschläge:', 'color: #f59e0b; font-weight: bold;');
+            console.log('   • Verwende die Self-Contained Version (obs-display-self-contained.html)');
+            console.log('   • Stelle sicher, dass obs-data.json im selben Ordner liegt');
+            console.log('   • Starte Mood Music und spiele einen Song ab');
+            console.log('   • Prüfe, ob beide Apps im gleichen Browser laufen');
+        }
+
+        function updateDisplay(data) {
+            const { song, mood, settings, showDisplay } = data;
+            
+            console.log('🎵 Display update:', { 
+                song: song?.title, 
+                mood: mood?.name, 
+                showDisplay,
+                method: connectionMethod,
+                timestamp: data.timestamp 
+            });
+            
+            const isNewSong = !currentSong || 
+                currentSong.id !== song?.id || 
+                currentSong.title !== song?.title;
+
+            currentSong = song;
+            currentMood = mood;
+
+            if (song && mood && showDisplay) {
+                updateContent(song, mood);
+                updateMoodStyling(mood);
+                
+                if (isNewSong || !isVisible) {
+                    showDisplayInternal();
+                }
+            } else if (!showDisplay) {
+                hideDisplayInternal();
+            }
+        }
+
+        function updateContent(song, mood) {
+            document.getElementById('songTitle').textContent = song.title || 'Unbekannter Titel';
+            document.getElementById('artistName').textContent = song.artist || 'Unbekannter Künstler';
+            
+            const albumElement = document.getElementById('albumName');
+            if (song.album) {
+                albumElement.textContent = song.album;
+                albumElement.style.display = 'block';
+            } else {
+                albumElement.style.display = 'none';
+            }
+            
+            updateCover(song, mood);
+            
+            const moodIndicator = document.getElementById('moodIndicator');
+            moodIndicator.textContent = mood.name;
+            moodIndicator.style.display = 'block';
+        }
+
+        function updateCover(song, mood) {
+            const coverImg = document.getElementById('coverImage');
+            const coverPlaceholder = document.getElementById('coverPlaceholder');
+            const background = document.getElementById('background');
+            
+            let imageUsed = false;
+            
+            if (song.cover && song.cover !== 'null' && song.cover !== '' && !song.cover.startsWith('blob:')) {
+                coverImg.src = song.cover;
+                coverImg.style.display = 'block';
+                coverPlaceholder.style.display = 'none';
+                background.style.backgroundImage = `url(${song.cover})`;
+                imageUsed = true;
+            } else if (mood.background && mood.background !== 'null' && mood.background !== '') {
+                coverImg.src = mood.background;
+                coverImg.style.display = 'block';
+                coverPlaceholder.style.display = 'none';
+                background.style.backgroundImage = `url(${mood.background})`;
+                imageUsed = true;
+            }
+            
+            if (!imageUsed) {
+                coverImg.style.display = 'none';
+                coverPlaceholder.style.display = 'flex';
+                background.style.backgroundImage = 'none';
+            }
+        }
+
+        function updateMoodStyling(mood) {
+            const moodOverlay = document.getElementById('moodOverlay');
+            const moodIndicator = document.getElementById('moodIndicator');
+            const songDisplay = document.getElementById('songDisplay');
+            
+            songDisplay.classList.remove('mood-energetic', 'mood-calm', 'mood-dark');
+            moodOverlay.classList.remove('pulse-slow', 'pulse-normal', 'pulse-fast');
+            
+            if (mood.color) {
+                const moodColor = mood.color;
+                moodOverlay.style.background = `linear-gradient(135deg, ${moodColor}40, ${moodColor}20)`;
+                moodIndicator.style.background = `${moodColor}60`;
+                moodIndicator.style.borderColor = `${moodColor}80`;
+            }
+            
+            if (mood.pulseSpeed) {
+                if (mood.pulseSpeed < 1.5) {
+                    moodOverlay.classList.add('pulse-fast');
+                    songDisplay.classList.add('mood-energetic');
+                } else if (mood.pulseSpeed > 2.5) {
+                    moodOverlay.classList.add('pulse-slow');
+                    songDisplay.classList.add('mood-calm');
+                } else {
+                    moodOverlay.classList.add('pulse-normal');
+                }
+            }
+            
+            if (mood.intensity === 'extreme') {
+                songDisplay.classList.add('mood-energetic');
+            } else if (mood.intensity === 'subtle') {
+                songDisplay.classList.add('mood-calm');
+            }
+        }
+
+        function showDisplayInternal() {
+            const display = document.getElementById('songDisplay');
+            display.classList.add('visible');
+            isVisible = true;
+        }
+
+        function hideDisplayInternal() {
+            const display = document.getElementById('songDisplay');
+            display.classList.remove('visible');
+            isVisible = false;
+        }
+
+        // Initialisierung
+        updateDebugInfo('Initialisiere OBS Display...');
+        updateConnectionIndicator('searching');
+        
+        loadDisplayData();
+        setInterval(loadDisplayData, 3000);
+        
+        // Storage-Event Listener
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'obs-display-data') {
+                loadDisplayData();
+            }
+        });
+        
+        // Visibility-Event Listener
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                loadDisplayData();
+            }
+        });
+        
+        console.log('🎵 OBS-Optimized Mood Music Display geladen!');
+        console.log('📡 Verwendet XMLHttpRequest + LocalStorage für maximale Kompatibilität');
+    </script>
+</body>
+</html>

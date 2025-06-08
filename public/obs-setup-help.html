@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mood Music OBS Setup Hilfe</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(15, 23, 42, 0.8);
+            border-radius: 16px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        h1 {
+            color: #4ade80;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        h2 {
+            color: #3b82f6;
+            margin: 30px 0 15px 0;
+            border-bottom: 2px solid #3b82f6;
+            padding-bottom: 5px;
+        }
+
+        .step {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+
+        .step-number {
+            background: #3b82f6;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+        }
+
+        .step-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .file-example {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+
+        .warning {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .success {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .tip {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .button {
+            background: #4ade80;
+            color: #0f172a;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.2s;
+        }
+
+        .button:hover {
+            background: #22c55e;
+            transform: translateY(-1px);
+        }
+
+        .obs-settings {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .setting-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .setting-label {
+            font-weight: bold;
+            color: #4ade80;
+            margin-bottom: 5px;
+        }
+
+        .setting-value {
+            font-family: monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        @media (max-width: 600px) {
+            .obs-settings {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 Mood Music OBS Setup Anleitung</h1>
+        
+        <div class="success">
+            <strong>✨ Diese Anleitung hilft dir dabei, die animierte Song-Anzeige in OBS einzurichten!</strong>
+            <br><br>
+            Nach dem Setup wird deine aktuelle Musik automatisch mit schönen Animationen und Mood-Effekten in OBS angezeigt.
+        </div>
+
+        <h2>📥 Schritt 1: Dateien herunterladen</h2>
+        <div class="step">
+            <div class="step-title">
+                <span class="step-number">1</span>
+                Dateien aus Mood Music downloaden
+            </div>
+            <p>Gehe in Mood Music zu <strong>Settings → OBS WebSocket → Download Complete OBS Package</strong></p>
+            <p>Das lädt 2 Dateien herunter:</p>
+            <div class="file-example">📄 mood-music-obs-display.html
+📄 obs-data.json</div>
+        </div>
+
+        <div class="warning">
+            <strong>⚠️ WICHTIG:</strong> Beide Dateien müssen im <strong>EXAKT GLEICHEN</strong> Ordner liegen!
+        </div>
+
+        <h2>🎥 Schritt 2: OBS einrichten</h2>
+        <div class="step">
+            <div class="step-title">
+                <span class="step-number">2</span>
+                Browser Source hinzufügen
+            </div>
+            <p>1. In OBS: <strong>+ → Browser Source</strong></p>
+            <p>2. Setze diese Einstellungen:</p>
+            
+            <div class="obs-settings">
+                <div class="setting-item">
+                    <div class="setting-label">URL / Local File:</div>
+                    <div class="setting-value">☑️ Local File<br>📁 mood-music-obs-display.html</div>
+                </div>
+                
+                <div class="setting-item">
+                    <div class="setting-label">Width (Breite):</div>
+                    <div class="setting-value">800</div>
+                </div>
+                
+                <div class="setting-item">
+                    <div class="setting-label">Height (Höhe):</div>
+                    <div class="setting-value">200</div>
+                </div>
+                
+                <div class="setting-item">
+                    <div class="setting-label">Shutdown source when not visible:</div>
+                    <div class="setting-value">❌ DEAKTIVIERT</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-title">
+                <span class="step-number">3</span>
+                WebSocket aktivieren (für Audio-Levels)
+            </div>
+            <p>Für erweiterte Features (Audio-Level-Monitoring):</p>
+            <p>1. In OBS: <strong>Tools → WebSocket Server Settings</strong></p>
+            <p>2. <strong>Enable WebSocket server</strong> aktivieren</p>
+            <p>3. Port: <strong>4455</strong> (Standard)</p>
+            <p>4. Optional: Passwort setzen</p>
+        </div>
+
+        <h2>🎵 Schritt 3: Testen</h2>
+        <div class="step">
+            <div class="step-title">
+                <span class="step-number">4</span>
+                Song abspielen und testen
+            </div>
+            <p>1. Starte einen Song in Mood Music</p>
+            <p>2. Die obs-data.json wird automatisch aktualisiert</p>
+            <p>3. Das Display in OBS zeigt den Song mit Animationen</p>
+            <p>4. Bei Songwechsel: Automatische Übergangsanimationen!</p>
+        </div>
+
+        <div class="success">
+            <strong>✅ Funktioniert es?</strong>
+            <br><br>
+            Wenn alles richtig eingerichtet ist, siehst du:
+            <ul style="margin: 10px 0 0 20px;">
+                <li>Song-Titel und Künstler</li>
+                <li>Album-Cover (falls verfügbar)</li>
+                <li>Mood-Anzeige mit passenden Farben</li>
+                <li>Sanfte Animationen bei Songwechsel</li>
+                <li>Dynamische Hintergrund-Effekte</li>
+            </ul>
+        </div>
+
+        <h2>🔧 Fehlerbehebung</h2>
+        
+        <div class="step">
+            <div class="step-title">
+                <span class="step-number">❗</span>
+                Display zeigt "obs-data.json fehlt!"
+            </div>
+            <p><strong>Lösung:</strong> Beide Dateien müssen im selben Ordner liegen</p>
+            <div class="file-example">✅ Richtig:
+C:\OBS-Files\mood-music-obs-display.html
+C:\OBS-Files\obs-data.json
+
+❌ Falsch:
+C:\Downloads\mood-music-obs-display.html
+C:\Desktop\obs-data.json</div>
+        </div>
+
+        <div class="step">
+            <div class="step-title">
+                <span class="step-number">❗</span>
+                Display zeigt "Warte auf Daten..."
+            </div>
+            <p><strong>Lösung:</strong> Spiele einen Song in Mood Music ab</p>
+            <p>Die obs-data.json wird erst erstellt, wenn ein Song läuft</p>
+        </div>
+
+        <div class="step">
+            <div class="step-title">
+                <span class="step-number">❗</span>
+                Display aktualisiert sich nicht
+            </div>
+            <p><strong>Lösung:</strong></p>
+            <p>1. Browser Source in OBS refreshen (Rechtsklick → Refresh)</p>
+            <p>2. Prüfen ob obs-data.json sich verändert (Datei-Datum)</p>
+            <p>3. Mood Music neu starten</p>
+        </div>
+
+        <h2>💡 Erweiterte Einstellungen</h2>
+        
+        <div class="tip">
+            <strong>🎨 Anpassungen in Mood Music:</strong>
+            <br><br>
+            In <strong>Settings → OBS WebSocket</strong> kannst du einstellen:
+            <ul style="margin: 10px 0 0 20px;">
+                <li><strong>Display Duration:</strong> Wie lange die Anzeige sichtbar ist</li>
+                <li><strong>Animation Style:</strong> Slide, Fade, Scale oder Glow</li>
+                <li><strong>Always Show:</strong> Anzeige dauerhaft sichtbar</li>
+                <li><strong>Show Cover:</strong> Album-Cover anzeigen</li>
+                <li><strong>Mood Transition Duration:</strong> Geschwindigkeit der Mood-Übergänge</li>
+            </ul>
+        </div>
+
+        <div class="tip">
+            <strong>🎯 Pro-Tipps:</strong>
+            <br><br>
+            <ul style="margin: 10px 0 0 20px;">
+                <li>Verwende <strong>"Always Show"</strong> für dauerhafte Anzeige</li>
+                <li>Experimentiere mit verschiedenen <strong>Animation Styles</strong></li>
+                <li>Die Mood-Farben passen sich automatisch an deine Musik an</li>
+                <li>Bei schneller Musik: Mehr energetische Animationen</li>
+                <li>Bei ruhiger Musik: Sanftere Übergänge</li>
+            </ul>
+        </div>
+
+        <h2>📞 Support</h2>
+        
+        <div class="step">
+            <div class="step-title">
+                <span class="step-number">?</span>
+                Brauchst du Hilfe?
+            </div>
+            <p>Wenn etwas nicht funktioniert:</p>
+            <p>1. Öffne die Browser-Konsole (F12) in OBS für Fehlermeldungen</p>
+            <p>2. Prüfe die Console in Mood Music für Debug-Informationen</p>
+            <p>3. Stelle sicher, dass beide Dateien die gleiche Version haben</p>
+        </div>
+
+        <div style="text-align: center; margin-top: 40px;">
+            <a href="../obs-display.html" class="button">🧪 Test Display öffnen</a>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); font-size: 14px;">
+            Mood Music OBS Integration v1.0 - Erstellt für bessere Streams ✨
+        </div>
+    </div>
+</body>
+</html>

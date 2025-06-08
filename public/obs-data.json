@@ -1,0 +1,37 @@
+{
+  "song": {
+    "id": "test-song-1749319718383",
+    "title": "Test Song Display",
+    "artist": "Mood Music System",
+    "album": "Settings Test",
+    "cover": "https://via.placeholder.com/300x300/4ade80/ffffff?text=TEST",
+    "moodBackground": null
+  },
+  "mood": {
+    "id": "test-mood",
+    "name": "Test Mode",
+    "color": "#4ade80",
+    "pulseSpeed": 2.5,
+    "intensity": "moderate",
+    "background": null
+  },
+  "settings": {
+    "obsPort": 4454,
+    "obsDisplayDuration": 5000,
+    "obsAlwaysShow": true,
+    "autoBackup": true,
+    "obsWebSocketEnabled": true,
+    "obsWebSocketHost": "localhost",
+    "obsWebSocketPort": 4455,
+    "obsWebSocketPassword": "",
+    "midiEnabled": true,
+    "midiInputDevice": "",
+    "midiOutputDevice": "",
+    "audioVisualizationEnabled": true,
+    "audioSmoothingFactor": 0.23,
+    "peakHoldTime": 1000,
+    "backupInterval": 300000
+  },
+  "timestamp": 1749319718383,
+  "showDisplay": true
+}
