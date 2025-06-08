@@ -18,7 +18,9 @@ import {
   Sliders,
   Wifi,
   WifiOff,
-  Play
+  Play,
+  FileText,
+  Info
 } from 'lucide-react';
 import useMoodStore from '../stores/moodStore';
 
@@ -64,8 +66,6 @@ const Settings = () => {
     loadMidiDevices();
   }, []);
 
-
-
   // Check OBS WebSocket status
   useEffect(() => {
     checkObsWebSocketStatus();
@@ -98,8 +98,6 @@ const Settings = () => {
     checkObsWebSocketStatus();
     checkMidiStatus();
   };
-
-
 
   const checkObsWebSocketStatus = () => {
     try {
@@ -134,8 +132,6 @@ const Settings = () => {
     setSaving(true);
     
     try {
-
-      
       if (localSettings.obsWebSocketEnabled !== settings.obsWebSocketEnabled ||
           localSettings.obsWebSocketHost !== settings.obsWebSocketHost ||
           localSettings.obsWebSocketPort !== settings.obsWebSocketPort) {
@@ -176,22 +172,6 @@ const Settings = () => {
     setSaving(false);
   };
 
-
-
-  const downloadOBSPackage = () => {
-    try {
-      // First generate the HTML content
-      const html = obsWebSocketService.generateAnimatedOBSHTML(localSettings);
-      
-      // Use the data writer to download both files
-      obsWebSocketService.downloadOBSPackage(html);
-      
-    } catch (error) {
-      console.error('Failed to download OBS package:', error);
-      alert('Failed to download OBS package. Please try again.');
-    }
-  };
-
   const testOBSDisplay = async () => {
     try {
       // Create test data
@@ -200,15 +180,15 @@ const Settings = () => {
         title: 'Test Song Display',
         artist: 'Mood Music System',
         album: 'Settings Test',
-        cover: `https://via.placeholder.com/300x300/${localSettings.obsAnimationStyle === 'glow' ? 'ff6b6b' : '4ade80'}/ffffff?text=TEST`,
+        cover: 'https://via.placeholder.com/300x300/4ade80/ffffff?text=TEST',
         moodBackground: null
       };
       
       const testMood = {
         id: 'test-mood',
         name: 'Test Mode',
-        color: localSettings.obsAnimationStyle === 'glow' ? '#ff6b6b' : '#4ade80',
-        pulseSpeed: localSettings.obsAnimationStyle === 'slide' ? 1.5 : 2.5,
+        color: '#4ade80',
+        pulseSpeed: 2.0,
         intensity: 'moderate',
         background: null
       };
@@ -216,7 +196,7 @@ const Settings = () => {
       await obsWebSocketService.updateSongDisplay(testSong, testMood, localSettings);
       
       console.log('🎵 Test display sent! Check your OBS Browser Source.');
-      alert('🎵 Test display sent! Check your OBS Browser Source to see the animated display.');
+      alert('🎵 Test display sent! Check your OBS Browser Source to see the display.');
       
       // Auto-hide after 5 seconds if not always show
       if (!localSettings.obsAlwaysShow) {
@@ -367,8 +347,6 @@ const Settings = () => {
           </p>
         </div>
 
-
-
         {/* OBS WebSocket */}
         <section className="card">
           <div className="flex items-center mb-4">
@@ -388,7 +366,7 @@ const Settings = () => {
                 <span className="text-gray-300">Enable OBS WebSocket</span>
               </label>
               <p className="text-xs text-gray-500 mt-1 ml-6">
-                Connect to OBS for audio level monitoring and control
+                Connect to OBS for audio level monitoring and automatic browser source refresh
               </p>
             </div>
 
@@ -436,9 +414,6 @@ const Settings = () => {
                   </div>
                 </div>
 
-                {/* OBS Browser Refresh Panel */}
-                <OBSBrowserRefreshPanel />
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -469,73 +444,16 @@ const Settings = () => {
                   </div>
                 </div>
 
-                {/* Animated Song Display Settings */}
+                {/* OBS Browser Refresh Panel */}
+                <OBSBrowserRefreshPanel />
+
+                {/* Simplified OBS Display Settings */}
                 <div className="border-t border-gray-600 pt-4">
-                  <h4 className="text-md font-medium text-white mb-3">Animated Song Display in OBS</h4>
+                  <h4 className="text-md font-medium text-white mb-3">OBS Song Display Setup</h4>
                   
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        HTTP Server Status
-                      </label>
-                      <div className="p-3 bg-gray-700/50 border border-gray-600 rounded-lg">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <div className={`w-3 h-3 rounded-full ${
-                              window.integratedHTTPServer?.isServerRunning() 
-                                ? 'bg-green-400' 
-                                : 'bg-red-400'
-                            }`}></div>
-                            <span className="text-sm text-gray-300">
-                              {window.integratedHTTPServer?.isServerRunning() 
-                                ? `HTTP Server läuft auf Port ${window.integratedHTTPServer?.getPort()}` 
-                                : 'HTTP Server nicht verfügbar'}
-                            </span>
-                          </div>
-                          {window.integratedHTTPServer?.isServerRunning() && (
-                            <button
-                              onClick={() => {
-                                const url = window.integratedHTTPServer.getOBSDisplayURL();
-                                window.open(url, '_blank');
-                              }}
-                              className="btn-ghost text-xs px-2 py-1"
-                            >
-                              🔗 Öffnen
-                            </button>
-                          )}
-                        </div>
-                        {window.integratedHTTPServer?.isServerRunning() && (
-                          <div className="mt-2 text-xs text-gray-400">
-                            URL: {window.integratedHTTPServer?.getOBSDisplayURL()}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Browser Source URL
-                      </label>
-                      <div className="flex space-x-2">
-                        <input
-                          type="text"
-                          value={window.location.origin + '/obs-display.html'}
-                          readOnly
-                          className="input-primary flex-1 bg-gray-700"
-                        />
-                        <button
-                          onClick={() => navigator.clipboard.writeText(window.location.origin + '/obs-display.html')}
-                          className="btn-secondary px-3"
-                          title="Copy URL"
-                        >
-                          📋
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Add this URL as a Browser Source in OBS (800x200 recommended). The obs-data.json file will be created automatically.
-                      </p>
-                    </div>
                     
+                    {/* Display Options */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -555,27 +473,7 @@ const Settings = () => {
                         </p>
                       </div>
                       
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Pre-Display Duration (seconds)
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="10"
-                          value={localSettings.obsPreDisplayDuration / 1000 || 2}
-                          onChange={(e) => handleSettingChange('obsPreDisplayDuration', parseInt(e.target.value) * 1000)}
-                          className="input-primary w-full"
-                          disabled={localSettings.obsAlwaysShow}
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                          Show before song change
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
+                      <div className="flex flex-col justify-center">
                         <label className="flex items-center space-x-3">
                           <input
                             type="checkbox"
@@ -589,179 +487,60 @@ const Settings = () => {
                           Keep song info visible at all times
                         </p>
                       </div>
-                      
-                      <div>
-                        <label className="flex items-center space-x-3">
-                          <input
-                            type="checkbox"
-                            checked={localSettings.obsShowCover || true}
-                            onChange={(e) => handleSettingChange('obsShowCover', e.target.checked)}
-                            className="rounded"
-                          />
-                          <span className="text-gray-300">Show album cover</span>
-                        </label>
-                        <p className="text-xs text-gray-500 mt-1 ml-6">
-                          Display album artwork when available
-                        </p>
-                      </div>
                     </div>
                     
+                    {/* Download OBS Files */}
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Animation Style
+                        <FileText className="w-4 h-4 inline mr-2" />
+                        Download OBS Display Files
                       </label>
-                      <select
-                        value={localSettings.obsAnimationStyle || 'slide'}
-                        onChange={(e) => handleSettingChange('obsAnimationStyle', e.target.value)}
-                        className="input-primary w-full"
-                      >
-                        <option value="slide">Slide In</option>
-                        <option value="fade">Fade In</option>
-                        <option value="scale">Scale In</option>
-                        <option value="glow">Glow Effect</option>
-                      </select>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Choose how the display appears and disappears
-                      </p>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Mood Transition Duration (ms)
-                      </label>
-                      <input
-                        type="range"
-                        min="500"
-                        max="3000"
-                        step="100"
-                        value={localSettings.obsMoodTransitionDuration || 1500}
-                        onChange={(e) => handleSettingChange('obsMoodTransitionDuration', parseInt(e.target.value))}
-                        className="w-full"
-                      />
-                      <div className="text-xs text-gray-500 mt-1">
-                        Current: {localSettings.obsMoodTransitionDuration || 1500}ms (Smooth mood background transitions)
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Download OBS Dateien
-                      </label>
-                      <div className="space-y-2">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <button
-                          onClick={() => downloadOBSPackage()}
-                          className="btn-primary w-full flex items-center justify-center"
+                          onClick={() => {
+                            const a = document.createElement('a');
+                            a.href = window.location.origin + '/obs-display-xhr.html';
+                            a.download = 'obs-display-xhr.html';
+                            a.click();
+                          }}
+                          className="btn-primary flex items-center justify-center"
                         >
                           <Download className="w-4 h-4 mr-2" />
-                          Download Complete OBS Package (EMPFOHLEN)
+                          Download OBS Display (XMLHttpRequest)
                         </button>
-                        
-                        <div className="grid grid-cols-1 gap-2">
-                          <button
-                            onClick={() => {
-                              const a = document.createElement('a');
-                              a.href = window.location.origin + '/obs-display-self-contained.html';
-                              a.download = 'obs-display-self-contained.html';
-                              a.click();
-                            }}
-                            className="btn-secondary flex items-center justify-center text-sm"
-                          >
-                            <Download className="w-3 h-3 mr-1" />
-                            Selbst-enthaltene HTML (CORS-frei)
-                          </button>
-                          
-                          <button
-                            onClick={() => {
-                              const a = document.createElement('a');
-                              a.href = window.location.origin + '/obs-display-xhr.html';
-                              a.download = 'obs-display-xhr.html';
-                              a.click();
-                            }}
-                            className="btn-secondary flex items-center justify-center text-sm"
-                          >
-                            <Download className="w-3 h-3 mr-1" />
-                            OBS-Optimiert (XMLHttpRequest)
-                          </button>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => obsWebSocketService.downloadAnimatedOBSFile(localSettings)}
-                            className="btn-ghost flex items-center justify-center text-sm"
-                          >
-                            <Download className="w-3 h-3 mr-1" />
-                            Standard HTML
-                          </button>
-                          <button
-                            onClick={() => obsWebSocketService.downloadOBSData()}
-                            className="btn-ghost flex items-center justify-center text-sm"
-                          >
-                            <Download className="w-3 h-3 mr-1" />
-                            JSON Only
-                          </button>
-                        </div>
                         
                         <button
                           onClick={testOBSDisplay}
-                          className="btn-ghost w-full flex items-center justify-center text-sm"
+                          className="btn-secondary flex items-center justify-center"
                         >
-                          <Play className="w-3 h-3 mr-2" />
-                          Test Display
+                          <Play className="w-4 h-4 mr-2" />
+                          Test Display in OBS
                         </button>
-                        
-                        <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-                          <div className="text-sm text-green-400 font-medium mb-1">
-                            🎨 3 verschiedene Lösungen verfügbar:
+                      </div>
+                    </div>
+                    
+                    {/* Setup Instructions */}
+                    <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                      <div className="flex items-start space-x-3">
+                        <Info className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <div className="text-sm text-blue-400 font-medium mb-2">
+                            🎵 OBS Setup Instructions:
                           </div>
-                          <div className="text-xs text-green-300 space-y-1">
-                            <div><strong>Self-Contained:</strong> Funktioniert immer, keine CORS-Probleme</div>
-                            <div><strong>OBS-Optimiert:</strong> XMLHttpRequest + http://absolute/ Schema</div>
-                            <div><strong>Standard:</strong> Fetch + JSON (benötigt HTTP Server)</div>
+                          <div className="text-xs text-blue-300 space-y-2">
+                            <div><strong>1. Download:</strong> Click "Download OBS Display" above</div>
+                            <div><strong>2. OBS Setup:</strong> Browser Source → Local File → Select downloaded HTML file</div>
+                            <div><strong>3. Size:</strong> Set to 800x200 pixels</div>
+                            <div><strong>4. Settings:</strong> Disable "Shutdown source when not visible"</div>
+                            <div><strong>5. Test:</strong> Play a song in Mood Music - should appear automatically!</div>
                           </div>
-                        </div>
-                        
-                        <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                          <div className="text-sm text-blue-400 font-medium mb-1">
-                            🌐 HTTP Server Option:
-                          </div>
-                          <div className="text-xs text-blue-300 space-y-1">
-                            <div>Für die beste Erfahrung ohne CORS-Probleme:</div>
-                            <div>1. HTTP Server ist automatisch gestartet</div>
-                            <div>2. Verwende: <strong>http://localhost:8081/obs-display.html</strong></div>
-                            <div>3. Automatische Updates ohne Downloads!</div>
-                            <div className="mt-2">
-                              <button
-                                onClick={() => {
-                                  if (window.integratedHTTPServer?.isServerRunning()) {
-                                    navigator.clipboard.writeText(window.integratedHTTPServer.getOBSDisplayURL());
-                                    alert('HTTP Server URL in Zwischenablage kopiert!');
-                                  } else {
-                                    alert('HTTP Server nicht verfügbar. Verwende eine der Download-Optionen.');
-                                  }
-                                }}
-                                className="btn-ghost text-xs px-2 py-1"
-                              >
-                                📋 HTTP URL kopieren
-                              </button>
-                            </div>
+                          <div className="mt-3 p-2 bg-green-500/20 border border-green-500/40 rounded text-xs text-green-300">
+                            <strong>✅ How it works:</strong> When you change songs, obs-data.json gets updated in the same folder as the HTML file. 
+                            The HTML file reads this JSON and displays the song info. OBS WebSocket automatically refreshes the browser source.
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-                
-                <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                  <div className="text-sm text-blue-400 font-medium mb-1">
-                    🎵 Setup Instructions (Aktualisiert):
-                  </div>
-                  <div className="text-xs text-blue-300 space-y-1">
-                    <div><strong>Option 1 (Einfachst):</strong> Lade "Self-Contained HTML" herunter - funktioniert immer!</div>
-                    <div><strong>Option 2 (Beste):</strong> Starte "start-obs-server.bat" im Projekt-Ordner</div>
-                    <div><strong>Option 3:</strong> Standard Package + beide Dateien im selben Ordner</div>
-                    <div><strong>OBS Setup:</strong> Browser Source → Lokale Datei oder http://localhost:8081/obs-display.html</div>
-                    <div><strong>Größe:</strong> 800x200 empfohlen</div>
-                    <div className="mt-2 text-blue-200">✨ Alle Lösungen aktualisieren automatisch bei Songwechsel!</div>
                   </div>
                 </div>
               </>
@@ -1075,7 +854,7 @@ const Settings = () => {
             </div>
             <div>
               <div className="text-gray-400">Build</div>
-              <div className="text-white">Release</div>
+              <div className="text-white">XMLHttpRequest Release</div>
             </div>
             <div>
               <div className="text-gray-400">Node.js</div>
@@ -1089,7 +868,7 @@ const Settings = () => {
           
           <div className="mt-4 pt-4 border-t border-gray-700">
             <p className="text-xs text-gray-500">
-              Mood Music - Stream-optimized music player with OBS integration
+              Mood Music - Stream-optimized music player with simplified OBS integration via local files
             </p>
           </div>
         </section>

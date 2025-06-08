@@ -3,7 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mood Music - OBS Display (XMLHttpRequest)</title>
+    
+    <!-- OPTIMIERTE REFRESH TAGS FÜR OBS -->
+    <meta http-equiv="refresh" content="5">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
+    <title>Mood Music - OBS Display v2.1</title>
     <style>
         * {
             margin: 0;
@@ -89,10 +96,6 @@
             transition: all 0.4s ease;
         }
 
-        .cover:hover {
-            transform: scale(1.05);
-        }
-
         .cover img {
             width: 100%;
             height: 100%;
@@ -156,17 +159,6 @@
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         }
 
-        .wave-animation {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 8px;
-            background: linear-gradient(90deg, transparent, currentColor, transparent);
-            opacity: 0.6;
-            animation: wave 2s ease-in-out infinite;
-        }
-
         .now-playing {
             position: absolute;
             top: -30px;
@@ -213,6 +205,11 @@
             animation: pulse 2s ease-in-out infinite;
         }
 
+        .connection-indicator.http {
+            background: #3b82f6;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        }
+
         @keyframes fadeInUp {
             from {
                 opacity: 0;
@@ -235,23 +232,14 @@
             }
         }
 
-        @keyframes wave {
-            0%, 100% {
-                transform: translateX(-100%);
-            }
-            50% {
-                transform: translateX(100%);
-            }
-        }
-
         @keyframes pulse {
             0%, 100% {
                 transform: scale(1);
                 opacity: 0.7;
             }
             50% {
-                transform: scale(1.02);
-                opacity: 0.9;
+                transform: scale(1.2);
+                opacity: 1;
             }
         }
 
@@ -263,15 +251,6 @@
             50% {
                 transform: scale(1.04);
                 opacity: 1;
-            }
-        }
-
-        @keyframes glow {
-            0%, 100% {
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 20px rgba(255, 255, 255, 0.1);
-            }
-            50% {
-                box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4), 0 0 30px rgba(255, 255, 255, 0.2);
             }
         }
 
@@ -287,36 +266,12 @@
             animation: pulse-fast 1s ease-in-out infinite;
         }
 
-        .glow-effect {
-            animation: glow 3s ease-in-out infinite;
-        }
-
         .mood-energetic .mood-overlay {
             animation: pulse-fast 1.5s ease-in-out infinite;
         }
 
         .mood-calm .mood-overlay {
             animation: pulse 4s ease-in-out infinite;
-        }
-
-        .mood-dark .mood-overlay {
-            animation: glow 5s ease-in-out infinite;
-        }
-
-        @media (max-width: 600px) {
-            .cover {
-                width: 100px;
-                height: 100px;
-            }
-            .info {
-                margin-left: 20px;
-            }
-            .title {
-                font-size: 22px;
-            }
-            .artist {
-                font-size: 16px;
-            }
         }
     </style>
 </head>
@@ -333,13 +288,12 @@
             </div>
             <div class="info">
                 <div id="songTitle" class="title">Mood Music</div>
-                <div id="artistName" class="artist">Suche obs-data.json...</div>
+                <div id="artistName" class="artist">Verbinde mit HTTP Server...</div>
                 <div id="albumName" class="album" style="display: none;"></div>
             </div>
         </div>
         <div id="moodIndicator" class="mood-indicator" style="display: none;"></div>
-        <div id="waveAnimation" class="wave-animation" style="display: none;"></div>
-        <div id="debugStatus" class="debug-status">Initialisiere XMLHttpRequest...</div>
+        <div id="debugStatus" class="debug-status">Initialisiere...</div>
     </div>
 
     <script>
@@ -349,12 +303,13 @@
         let isVisible = false;
         let loadAttempts = 0;
         let connectionStatus = 'searching';
+        let dataSource = 'none';
 
-        const maxLoadAttempts = 25;
+        const maxLoadAttempts = 30;
 
         // UI-Updates
         function updateDebugInfo(message) {
-            console.log('🎵 OBS Display (XMLHttpRequest):', message);
+            console.log('🎵 OBS Display v2.1:', message);
             
             const statusEl = document.getElementById('debugStatus');
             if (statusEl) {
@@ -362,134 +317,144 @@
             }
         }
 
-        function updateConnectionIndicator(status) {
+        function updateConnectionIndicator(status, source = '') {
             const indicator = document.getElementById('connectionIndicator');
             if (indicator) {
                 indicator.className = 'connection-indicator ' + status;
             }
             connectionStatus = status;
+            dataSource = source;
         }
 
-        // 🎯 HAUPTFUNKTION: XMLHttpRequest für lokale JSON-Dateien
-        function loadDisplayData() {
+        // Hauptfunktion zum Laden der Daten
+        async function loadDisplayData() {
             loadAttempts++;
             
-            // 🎯 LÖSUNG: XMLHttpRequest statt fetch() für OBS CEF!
-            const xhr = new XMLHttpRequest();
-            
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState === 4) {
-                    if (xhr.status === 200 || xhr.status === 0) { // 0 für lokale Dateien
+            try {
+                // METHODE 1: HTTP Server (PRIORITÄT - beste Lösung)
+                try {
+                    const ports = [8080, 8081, 8082, 8083];
+                    let httpSuccess = false;
+                    
+                    for (const port of ports) {
                         try {
-                            const data = JSON.parse(xhr.responseText);
-                            if (data && data.timestamp && data.timestamp > lastDataTimestamp) {
-                                lastDataTimestamp = data.timestamp;
-                                updateDisplay(data);
-                                updateDebugInfo('Verbunden via XMLHttpRequest ✅');
-                                updateConnectionIndicator('connected');
-                                loadAttempts = 0; // Reset bei erfolgreichem Load
-                                return;
+                            const response = await fetch(`http://localhost:${port}/obs-data.json?t=${Date.now()}`);
+                            if (response.ok) {
+                                const data = await response.json();
+                                if (data && data.timestamp && data.timestamp > lastDataTimestamp) {
+                                    lastDataTimestamp = data.timestamp;
+                                    updateDisplay(data);
+                                    updateDebugInfo(`HTTP Server ✅ Port ${port} - ${new Date(data.timestamp).toLocaleTimeString()}`);
+                                    updateConnectionIndicator('http', 'http');
+                                    loadAttempts = 0;
+                                    httpSuccess = true;
+                                    break;
+                                }
                             }
-                        } catch (parseError) {
-                            console.error('JSON Parse Error:', parseError);
-                            updateDebugInfo('JSON Parse Fehler');
+                        } catch (portError) {
+                            // Port nicht verfügbar, versuche nächsten
+                            continue;
                         }
                     }
                     
-                    // Fallback: localStorage
-                    tryLocalStorage();
+                    if (httpSuccess) return true;
+                    
+                } catch (httpError) {
+                    // HTTP Server nicht verfügbar
                 }
-            };
-            
-            xhr.onerror = function() {
-                console.log('XMLHttpRequest failed, trying localStorage...');
-                tryLocalStorage();
-            };
-            
-            try {
-                // 🎯 XMLHttpRequest zu obs-data.json im gleichen Verzeichnis
-                xhr.open('GET', './obs-data.json?t=' + Date.now(), true);
-                xhr.send();
-            } catch (error) {
-                console.error('XMLHttpRequest error:', error);
-                tryLocalStorage();
-            }
-        }
 
-        function tryLocalStorage() {
-            try {
-                const data = localStorage.getItem('obs-display-data');
-                if (data) {
-                    const parsed = JSON.parse(data);
-                    if (parsed && parsed.timestamp && parsed.timestamp > lastDataTimestamp) {
-                        lastDataTimestamp = parsed.timestamp;
-                        updateDisplay(parsed);
-                        updateDebugInfo('LocalStorage Fallback ⚠️');
-                        updateConnectionIndicator('connected');
-                        loadAttempts = 0;
-                        return;
+                // METHODE 2: LocalStorage (Fallback)
+                try {
+                    const data = localStorage.getItem('obs-display-data');
+                    if (data) {
+                        const parsed = JSON.parse(data);
+                        if (parsed && parsed.timestamp && parsed.timestamp > lastDataTimestamp) {
+                            lastDataTimestamp = parsed.timestamp;
+                            updateDisplay(parsed);
+                            updateDebugInfo(`LocalStorage ✅ ${new Date(parsed.timestamp).toLocaleTimeString()}`);
+                            updateConnectionIndicator('connected', 'localStorage');
+                            loadAttempts = 0;
+                            return true;
+                        }
+                    }
+                } catch (storageError) {
+                    // LocalStorage nicht verfügbar
+                }
+
+                // METHODE 3: JSON-Datei (letzter Fallback)
+                if (window.location.protocol !== 'file:') {
+                    try {
+                        const response = await fetch('./obs-data.json?t=' + Date.now());
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data && data.timestamp && data.timestamp > lastDataTimestamp) {
+                                lastDataTimestamp = data.timestamp;
+                                updateDisplay(data);
+                                updateDebugInfo(`JSON File ✅ ${new Date(data.timestamp).toLocaleTimeString()}`);
+                                updateConnectionIndicator('connected', 'jsonFile');
+                                loadAttempts = 0;
+                                return true;
+                            }
+                        }
+                    } catch (fetchError) {
+                        // JSON-Datei nicht gefunden
                     }
                 }
-            } catch (storageError) {
-                console.error('LocalStorage error:', storageError);
-            }
-            
-            // Keine Daten gefunden
-            handleNoData();
-        }
 
-        function handleNoData() {
-            updateConnectionIndicator('searching');
-            
-            if (loadAttempts <= 5) {
-                updateDebugInfo('Suche obs-data.json...');
-                document.getElementById('artistName').textContent = 'Suche obs-data.json...';
-            } else if (loadAttempts <= 15) {
-                updateDebugInfo('obs-data.json nicht gefunden');
-                document.getElementById('artistName').textContent = 'obs-data.json nicht gefunden!';
-            } else if (loadAttempts <= maxLoadAttempts) {
-                updateDebugInfo('Dateien im selben Ordner?');
-                document.getElementById('artistName').textContent = 'HTML + JSON im selben Ordner?';
-            } else {
-                updateDebugInfo('Setup-Hilfe in Console');
-                document.getElementById('artistName').textContent = 'Setup-Hilfe: F12 Console';
+                // Keine neuen Daten gefunden
+                updateConnectionIndicator('searching');
                 
-                if (loadAttempts === maxLoadAttempts + 1) {
-                    showSetupHelp();
+                if (loadAttempts <= 5) {
+                    updateDebugInfo('Suche HTTP Server...');
+                    document.getElementById('artistName').textContent = 'Suche Verbindung...';
+                } else if (loadAttempts <= 15) {
+                    updateDebugInfo('HTTP Server nicht gefunden');
+                    document.getElementById('artistName').textContent = 'HTTP Server offline?';
+                } else if (loadAttempts <= 25) {
+                    updateDebugInfo('Versuche LocalStorage...');
+                    document.getElementById('artistName').textContent = 'Fallback auf LocalStorage...';
+                } else {
+                    updateDebugInfo('Server starten erforderlich');
+                    document.getElementById('artistName').textContent = 'Starte start-improved-obs-server.bat';
+                    
+                    if (loadAttempts === 26) {
+                        showServerHelp();
+                    }
                 }
+
+            } catch (error) {
+                updateDebugInfo('Verbindungsfehler');
+                updateConnectionIndicator('searching');
+                console.error('Fehler beim Laden der OBS Daten:', error);
             }
+            
+            return false;
         }
 
-        function showSetupHelp() {
-            console.log('%c🎵 OBS XMLHttpRequest Setup Hilfe:', 'color: #4ade80; font-weight: bold; font-size: 14px;');
-            console.log('%c✅ LÖSUNG GEFUNDEN:', 'color: #22c55e; font-weight: bold;');
-            console.log('   Das Problem: OBS CEF blockiert fetch() zu lokalen Dateien');
-            console.log('   Die Lösung: XMLHttpRequest funktioniert in OBS Browser Sources!');
+        function showServerHelp() {
+            console.log('%c🎵 HTTP Server Setup Hilfe:', 'color: #3b82f6; font-weight: bold; font-size: 14px;');
+            console.log('%c🚀 Server starten:', 'color: #22c55e; font-weight: bold;');
+            console.log('   1. Doppelklick auf "start-improved-obs-server.bat"');
+            console.log('   2. Oder Terminal: cd "C:\\Streaming\\Code\\mood music"');
+            console.log('   3. Dann: node src/services/improvedMoodMusicHTTPServer.js');
             console.log('');
-            console.log('%c📁 DATEI-SETUP:', 'color: #3b82f6; font-weight: bold;');
-            console.log('   1. obs-data.json und HTML-Datei müssen im GLEICHEN Ordner sein');
-            console.log('   2. OBS Browser Source → Lokale Datei → HTML-Datei auswählen');
-            console.log('   3. Breite: 800, Höhe: 200');
-            console.log('   4. "Shutdown source when not visible" = DEAKTIVIERT');
+            console.log('%c🌐 Server URLs:', 'color: #8b5cf6; font-weight: bold;');
+            console.log('   • OBS Display: http://localhost:8080/obs-display.html');
+            console.log('   • Test-Seite: http://localhost:8080/test');
+            console.log('   • Status: http://localhost:8080/status');
             console.log('');
-            console.log('%c🔧 DEBUGGING:', 'color: #f59e0b; font-weight: bold;');
-            console.log('   • Prüfe ob obs-data.json existiert und aktuelle Daten hat');
-            console.log('   • Song in Mood Music abspielen → JSON wird automatisch aktualisiert');
-            console.log('   • OBS Browser Source sollte sich automatisch refreshen');
-            console.log('');
-            console.log('%c🎯 TECHNISCHE DETAILS:', 'color: #8b5cf6; font-weight: bold;');
-            console.log('   • XMLHttpRequest: Funktioniert mit lokalen Dateien in OBS');
-            console.log('   • fetch(): Blockiert von CORS in OBS CEF');
-            console.log('   • LocalStorage: Fallback wenn JSON nicht erreichbar');
+            console.log('%c⚡ Automatisch:', 'color: #f59e0b; font-weight: bold;');
+            console.log('   Server sollte automatisch mit Mood Music App starten!');
         }
 
         function updateDisplay(data) {
             const { song, mood, settings, showDisplay } = data;
             
-            console.log('🎵 Display update via XMLHttpRequest:', { 
+            console.log('🎵 Display update v2.1:', { 
                 song: song?.title, 
                 mood: mood?.name, 
                 showDisplay,
+                source: dataSource,
                 timestamp: data.timestamp 
             });
             
@@ -548,14 +513,6 @@
                 imageUsed = true;
             } 
             // Mood-Background als Fallback
-            else if (song.moodBackground && song.moodBackground !== 'null' && song.moodBackground !== '') {
-                coverImg.src = song.moodBackground;
-                coverImg.style.display = 'block';
-                coverPlaceholder.style.display = 'none';
-                background.style.backgroundImage = `url(${song.moodBackground})`;
-                imageUsed = true;
-            }
-            // Mood-Background direkt
             else if (mood.background && mood.background !== 'null' && mood.background !== '') {
                 coverImg.src = mood.background;
                 coverImg.style.display = 'block';
@@ -575,11 +532,10 @@
         function updateMoodStyling(mood) {
             const moodOverlay = document.getElementById('moodOverlay');
             const moodIndicator = document.getElementById('moodIndicator');
-            const waveAnimation = document.getElementById('waveAnimation');
             const songDisplay = document.getElementById('songDisplay');
             
             // Entferne bestehende Mood-Klassen
-            songDisplay.classList.remove('mood-energetic', 'mood-calm', 'mood-dark');
+            songDisplay.classList.remove('mood-energetic', 'mood-calm');
             moodOverlay.classList.remove('pulse-slow', 'pulse-normal', 'pulse-fast');
             
             if (mood.color) {
@@ -587,7 +543,6 @@
                 moodOverlay.style.background = `linear-gradient(135deg, ${moodColor}40, ${moodColor}20)`;
                 moodIndicator.style.background = `${moodColor}60`;
                 moodIndicator.style.borderColor = `${moodColor}80`;
-                waveAnimation.style.color = moodColor;
             }
             
             // Mood-basierte Animationen
@@ -601,16 +556,6 @@
                 } else {
                     moodOverlay.classList.add('pulse-normal');
                 }
-            }
-            
-            // Mood-Intensitäts-Effekte
-            if (mood.intensity === 'extreme') {
-                waveAnimation.style.display = 'block';
-                songDisplay.classList.add('mood-energetic');
-            } else if (mood.intensity === 'subtle') {
-                songDisplay.classList.add('mood-calm');
-            } else if (mood.intensity === 'dark') {
-                songDisplay.classList.add('mood-dark');
             }
         }
 
@@ -629,13 +574,13 @@
         }
 
         // Initialisierung
-        updateDebugInfo('XMLHttpRequest bereit...');
+        updateDebugInfo('Initialisiere HTTP Server Client...');
         updateConnectionIndicator('searching');
         
         // Erste Datenladung
         loadDisplayData();
         
-        // Regelmäßige Updates alle 2 Sekunden
+        // Regelmäßige Updates alle 2 Sekunden (optimiert für HTTP Server)
         setInterval(loadDisplayData, 2000);
         
         // Bei Visibility-Änderungen auch prüfen
@@ -650,10 +595,9 @@
             loadDisplayData();
         });
         
-        console.log('🎵 Mood Music OBS Display mit XMLHttpRequest geladen und bereit!');
-        console.log('🔧 Suche obs-data.json mit XMLHttpRequest (funktioniert in OBS CEF)...');
-        console.log('🚫 fetch() ist in OBS Browser Sources für lokale Dateien blockiert');
-        console.log('✅ XMLHttpRequest umgeht CORS-Beschränkungen für lokale Dateien');
+        console.log('🎵 Mood Music OBS Display v2.1 geladen!');
+        console.log('🌐 Priorität: HTTP Server > LocalStorage > JSON File');
+        console.log('🚀 Starte Server mit: start-improved-obs-server.bat');
     </script>
 </body>
 </html>

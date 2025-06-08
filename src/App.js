@@ -8,6 +8,7 @@ import obsWebSocketService from './services/obsWebSocketService';
 import midiService from './services/midiService';
 import globalStateService from './services/globalStateService';
 // import integratedHTTPServer from './services/integratedHTTPServer'; // ❌ ENTFERNT
+// import httpServerIntegrationService from './services/httpServerIntegrationService'; // ❌ ENTFERNT - Lokale Dateien only
 import fileUtils from './utils/fileUtils';
 
 // Components
@@ -128,7 +129,7 @@ function App() {
         window.obsWebSocketService = obsWebSocketService;
         // window.obsBrowserRefresh = obsBrowserRefresh; // ❌ ENTFERNT
         
-        // ❌ HTTP Server komplett entfernt - verwende nur obsDataWriter
+        // ❌ HTTP Server komplett entfernt - verwende nur lokale Datei-Updates
         
         // Ensure data directories exist
         await fileUtils.ensureDataDirectories();
@@ -309,11 +310,6 @@ function App() {
         obsWebSocketService.destroy();
         // obsBrowserRefresh.destroy(); // ❌ ENTFERNT
         globalStateService.destroy();
-        
-        // ❌ HTTP Server entfernt
-        // if (integratedHTTPServer.isServerRunning()) {
-        //   integratedHTTPServer.stop();
-        // }
       } catch (error) {
         console.log('Error during cleanup:', error.message);
       }
