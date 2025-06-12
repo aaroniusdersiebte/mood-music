@@ -1,12 +1,29 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Music, Settings, Grid, Volume2, Sliders, Gamepad2 } from 'lucide-react';
+import { 
+  Music, 
+  Settings, 
+  Grid, 
+  Volume2, 
+  Sliders, 
+  Gamepad2, 
+  Target, 
+  Layout,
+  Sparkles
+} from 'lucide-react';
 import useMoodStore from '../stores/moodStore';
 
 const Sidebar = ({ currentView, onViewChange }) => {
   const { isPlaying, currentSong } = useMoodStore();
 
   const navigationItems = [
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: Layout,
+      description: 'Modular workspace',
+      isNew: true
+    },
     {
       id: 'moods',
       label: 'Moods',
@@ -18,6 +35,12 @@ const Sidebar = ({ currentView, onViewChange }) => {
       label: 'Audio Mixer',
       icon: Sliders,
       description: 'OBS audio control & levels'
+    },
+    {
+      id: 'hotkeys',
+      label: 'Hotkey Decks',
+      icon: Target,
+      description: 'Configurable button decks'
     },
     {
       id: 'midi',
@@ -43,7 +66,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
           </div>
           <div>
             <h1 className="text-xl font-bold text-white">Mood Music</h1>
-            <p className="text-xs text-gray-400">Streaming Music Player</p>
+            <p className="text-xs text-gray-400">Streaming Music Player v2.0</p>
           </div>
         </div>
       </div>
@@ -55,7 +78,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
             <motion.button
               key={item.id}
               onClick={() => onViewChange(item.id)}
-              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 group ${
+              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 group relative ${
                 currentView === item.id
                   ? 'bg-secondary text-white'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'
@@ -64,10 +87,20 @@ const Sidebar = ({ currentView, onViewChange }) => {
               whileTap={{ scale: 0.98 }}
             >
               <item.icon className="w-5 h-5" />
-              <div className="text-left">
-                <div className="font-medium">{item.label}</div>
+              <div className="text-left flex-1">
+                <div className="font-medium flex items-center gap-2">
+                  {item.label}
+                  {item.isNew && (
+                    <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 text-xs rounded-full border border-green-500/30">
+                      NEW
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs opacity-60">{item.description}</div>
               </div>
+              {item.isNew && (
+                <Sparkles className="w-3 h-3 text-green-400 animate-pulse" />
+              )}
             </motion.button>
           ))}
         </nav>
@@ -114,9 +147,9 @@ const Sidebar = ({ currentView, onViewChange }) => {
       {/* Version Info */}
       <div className="p-4 border-t border-gray-700">
         <div className="text-center">
-          <div className="text-xs text-gray-500">Version 1.0.0</div>
+          <div className="text-xs text-gray-500">Version 2.0.0</div>
           <div className="text-xs text-gray-600 mt-1">
-            OBS Ready • Stream Optimized
+            OBS Ready • Stream Optimized • Modular Dashboard
           </div>
         </div>
       </div>
