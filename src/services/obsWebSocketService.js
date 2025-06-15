@@ -27,6 +27,13 @@ class OBSWebSocketService {
     this.obs.on('ConnectionOpened', () => {
       console.log('🔗 OBS WebSocket connected');
       this.connected = true;
+      
+      // 🚨 KRITISCHER FIX: Update Global State Service SOFORT!
+      if (window.enhancedGlobalStateService) {
+        console.log('🚨 FIXING: Updating Global State Service with OBS connection');
+        window.enhancedGlobalStateService.updateOBSState({ connected: true });
+      }
+      
       this.triggerCallback('connected');
       
       // 🎯 GEFIXT: Warte bis WebSocket richtig identifiziert ist
@@ -37,12 +44,24 @@ class OBSWebSocketService {
           this.discoverAudioSources();
           this.discoverBrowserSources();
         }
-      }, 2000); // Längere Verzögerung für sichere Identifikation
+      }, 3000); // Noch längere Verzögerung für sichere Identifikation
     });
 
     this.obs.on('ConnectionClosed', () => {
       console.log('❌ OBS WebSocket disconnected');
       this.connected = false;
+      
+      // 🚨 KRITISCHER FIX: Update Global State Service beim Disconnect!
+      if (window.enhancedGlobalStateService) {
+        console.log('🚨 FIXING: Updating Global State Service with OBS disconnect');
+        window.enhancedGlobalStateService.updateOBSState({ 
+          connected: false,
+          sources: [],
+          audioLevels: {},
+          scenes: []
+        });
+      }
+      
       this.triggerCallback('disconnected');
       this.startReconnect();
     });
@@ -209,7 +228,21 @@ class OBSWebSocketService {
       }
 
       console.log('🎵 Discovered audio sources:', Array.from(this.audioSources.keys()));
-      this.triggerCallback('sourcesDiscovered', Array.from(this.audioSources.values()));
+      
+      // 🚨 KRITISCHER FIX: Update Global State Service mit entdeckten Sources!
+      const sourcesArray = Array.from(this.audioSources.values());
+      if (window.enhancedGlobalStateService) {
+        console.log('🚨 FIXING: Sending', sourcesArray.length, 'audio sources to Global State Service');
+        window.enhancedGlobalStateService.updateOBSState({ 
+          sources: sourcesArray,
+          lastSourceDiscovery: Date.now()
+        });
+        
+        // Trigger der sourcesDiscovered callback im GlobalStateService
+        window.enhancedGlobalStateService.triggerCallbacks('sourcesDiscovered', sourcesArray);
+      }
+      
+      this.triggerCallback('sourcesDiscovered', sourcesArray);
       
     } catch (error) {
       console.error('Failed to discover audio sources:', error);
@@ -328,13 +361,13 @@ class OBSWebSocketService {
 
     this.audioLevels.set(inputName, levels);
     
-    // 🎯 Forward to GlobalStateService
+    // 🚨 KRITISCHER FIX: Forward to ENHANCED GlobalStateService
     try {
-      if (window.globalStateService) {
-        window.globalStateService.updateAudioLevels(inputName, levels);
+      if (window.enhancedGlobalStateService) {
+        window.enhancedGlobalStateService.updateAudioLevels(inputName, levels);
       }
     } catch (error) {
-      console.error('Failed to forward audio levels to GlobalStateService:', error);
+      console.error('Failed to forward audio levels to Enhanced GlobalStateService:', error);
     }
     
     // Trigger callback for UI
@@ -410,11 +443,11 @@ class OBSWebSocketService {
     }
 
     try {
-      if (window.globalStateService) {
-        window.globalStateService.updateSourceVolume(inputName, inputVolumeDb);
+      if (window.enhancedGlobalStateService) {
+        window.enhancedGlobalStateService.updateSourceVolume(inputName, inputVolumeDb);
       }
     } catch (error) {
-      console.error('Failed to forward volume change to GlobalStateService:', error);
+      console.error('Failed to forward volume change to Enhanced GlobalStateService:', error);
     }
 
     this.triggerCallback('volumeChanged', {
