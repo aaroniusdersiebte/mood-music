@@ -4,7 +4,7 @@ import useMoodStore from './stores/moodStore';
 import audioService from './services/audioService';
 import obsWebSocketService from './services/obsWebSocketService';
 import midiService from './services/midiService';
-import enhancedGlobalStateService from './services/enhancedGlobalStateService'; // ✅ Enhanced Service
+import enhancedGlobalStateService from './services/enhancedGlobalStateService'; // Enhanced Service
 import configService from './services/configService';
 import fileUtils from './utils/fileUtils';
 
@@ -17,7 +17,7 @@ import LoadingScreen from './components/LoadingScreen';
 import AudioMixer from './components/AudioMixer';
 
 import OptimizedHotkeyDeckManager from './components/OptimizedHotkeyDeckManager';
-import EnhancedModularDashboard from './components/EnhancedModularDashboard'; // ✅ Enhanced Dashboard
+import EnhancedModularDashboard from './components/EnhancedModularDashboard'; // Enhanced Dashboard
 
 // Styles
 import './App.css';
@@ -41,13 +41,13 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState({ obs: false, midi: false });
   const [initializationProgress, setInitializationProgress] = useState({
-    step: 'Starting Enhanced System...',
+    step: 'Starting...',
     progress: 0
   });
 
-  // ✅ Enhanced Global Event Handlers
+  // Enhanced Global Event Handlers
   const handleGlobalVolumeChange = async (data) => {
-    console.log('✅ Enhanced App: Handling global volume change:', data);
+    console.log('Enhanced App: Handling global volume change:', data);
     
     const { target, value, mapping } = data;
     
@@ -55,19 +55,19 @@ function App() {
       const success = await enhancedGlobalStateService.setVolume(target, value, 'MIDI');
       
       if (success) {
-        console.log(`✅ Enhanced App: Volume control successful: ${target} -> ${value}dB`);
+        console.log(`Enhanced App: Volume control successful: ${target} -> ${value}dB`);
       } else {
-        console.error(`❌ Enhanced App: Volume control failed for: ${target}`);
+        console.error(`Enhanced App: Volume control failed for: ${target}`);
       }
     } catch (error) {
-      console.error('❌ Enhanced App: Volume change error:', error);
+      console.error('Enhanced App: Volume change error:', error);
     }
   };
 
   const handleMIDIHotkey = (data) => {
     const { action, target, customCommand } = data;
     
-    console.log('✅ Enhanced App: MIDI hotkey received:', { action, target, customCommand });
+    console.log('Enhanced App: MIDI hotkey received:', { action, target, customCommand });
     
     switch (action) {
       case 'playPause':
@@ -77,10 +77,12 @@ function App() {
         nextSong();
         break;
       case 'prevSong':
-        console.log('Enhanced App: Previous song triggered via MIDI');
+        // Implement previous song functionality
+        console.log('Previous song triggered via MIDI');
         break;
       case 'shuffle':
-        console.log('Enhanced App: Shuffle toggled via MIDI');
+        // Implement shuffle functionality
+        console.log('Shuffle toggled via MIDI');
         break;
       case 'moodSwap':
         const targetMood = moods.find(m => 
@@ -89,9 +91,9 @@ function App() {
         );
         if (targetMood) {
           setActiveMood(targetMood.id);
-          console.log(`✅ Enhanced App: Switched to mood: ${targetMood.name}`);
+          console.log(`Enhanced App: Switched to mood: ${targetMood.name}`);
         } else {
-          console.log(`❌ Enhanced App: Mood not found: ${target}`);
+          console.log(`Enhanced App: Mood not found: ${target}`);
         }
         break;
       case 'mute':
@@ -111,7 +113,7 @@ function App() {
   const handleMusicAction = (data) => {
     const { action, target } = data;
     
-    console.log('✅ Enhanced App: Music action received:', { action, target });
+    console.log('Enhanced App: Music action received:', { action, target });
     
     switch (action) {
       case 'playPause':
@@ -121,6 +123,7 @@ function App() {
         nextSong();
         break;
       case 'prevSong':
+        // Implement previous song
         console.log('Enhanced App: Previous song requested');
         break;
       case 'volumeUp':
@@ -134,6 +137,7 @@ function App() {
         console.log('Enhanced App: Volume down:', newVolumeDown);
         break;
       case 'shuffle':
+        // Implement shuffle
         console.log('Enhanced App: Shuffle toggled');
         break;
       default:
@@ -144,17 +148,17 @@ function App() {
   const handleOBSAction = async (data) => {
     const { action, target } = data;
     
-    console.log('✅ Enhanced App: OBS action received:', { action, target });
+    console.log('Enhanced App: OBS action received:', { action, target });
     
     if (!enhancedGlobalStateService.isOBSConnected()) {
-      console.warn('❌ Enhanced App: OBS not connected, cannot execute action:', action);
+      console.warn('Enhanced App: OBS not connected, cannot execute action:', action);
       return;
     }
     
     try {
       const obsService = enhancedGlobalStateService.services.obs;
       if (!obsService || !obsService.obs) {
-        console.error('❌ Enhanced App: OBS service not available');
+        console.error('Enhanced App: OBS service not available');
         return;
       }
 
@@ -162,7 +166,7 @@ function App() {
         case 'sceneSwitch':
           if (target) {
             await obsService.obs.call('SetCurrentProgramScene', { sceneName: target });
-            console.log('✅ Enhanced App: Scene switched to:', target);
+            console.log('Enhanced App: Scene switched to:', target);
           }
           break;
         case 'sourceToggle':
@@ -173,65 +177,70 @@ function App() {
               filterName: 'Toggle',
               filterEnabled: !currentState.videoActive
             });
-            console.log('✅ Enhanced App: Source toggled:', target);
+            console.log('Enhanced App: Source toggled:', target);
           }
           break;
         case 'startRecord':
           await obsService.obs.call('StartRecord');
-          console.log('✅ Enhanced App: Recording started');
+          console.log('Enhanced App: Recording started');
           break;
         case 'stopRecord':
           await obsService.obs.call('StopRecord');
-          console.log('✅ Enhanced App: Recording stopped');
+          console.log('Enhanced App: Recording stopped');
           break;
         case 'startStream':
           await obsService.obs.call('StartStream');
-          console.log('✅ Enhanced App: Streaming started');
+          console.log('Enhanced App: Streaming started');
           break;
         case 'stopStream':
           await obsService.obs.call('StopStream');
-          console.log('✅ Enhanced App: Streaming stopped');
+          console.log('Enhanced App: Streaming stopped');
           break;
         default:
           console.log('Enhanced App: Unknown OBS action:', action);
       }
     } catch (error) {
-      console.error('❌ Enhanced App: OBS action failed:', error);
+      console.error('Enhanced App: OBS action failed:', error);
     }
   };
 
   const handleHotkeyAction = (data) => {
     const { action, target, customCommand } = data;
     
-    console.log('✅ Enhanced App: Hotkey action received:', { action, target, customCommand });
+    console.log('Enhanced App: Hotkey action received:', { action, target, customCommand });
     
+    // Execute keyboard shortcut or custom command
     if (customCommand) {
+      // Handle custom commands
       console.log('Enhanced App: Executing custom command:', customCommand);
     } else {
+      // Handle standard hotkey actions
       handleMIDIHotkey({ action, target });
     }
   };
 
   const handleMoodPlayback = (event) => {
     const { mood } = event.detail;
-    console.log('✅ Enhanced App: Mood playback requested:', mood.name);
+    console.log('Enhanced App: Mood playback requested:', mood.name);
     
     setActiveMood(mood.id);
     
+    // Auto-play first song from mood if available
     if (mood.songs && mood.songs.length > 0) {
       setCurrentSong(mood.songs[0]);
       setIsPlaying(true);
     }
   };
 
-  // ✅ Enhanced Event Listeners Setup
+  // Enhanced Event Listeners Setup
   useEffect(() => {
-    console.log('✅ Enhanced App: Setting up enhanced event listeners...');
+    console.log('Enhanced App: Setting up event listeners...');
     
     const handleHotkeyDeckAction = (event) => {
       const { action, target, type, customCommand } = event.detail;
-      console.log('✅ Enhanced App: HotkeyDeck action received:', event.detail);
+      console.log('Enhanced App: HotkeyDeck action received:', event.detail);
       
+      // Route different action types to appropriate handlers
       switch (type) {
         case 'hotkey':
           handleHotkeyAction({ action, target, customCommand });
@@ -256,10 +265,13 @@ function App() {
     
     const handleSimulateKeyboard = (event) => {
       const { keys, modifier } = event.detail;
-      console.log('✅ Enhanced App: Simulating keyboard shortcut:', { keys, modifier });
+      console.log('Enhanced App: Simulating keyboard shortcut:', { keys, modifier });
+      
+      // Simulate keyboard events
+      // This would integrate with a keyboard simulation library
     };
     
-    // Register enhanced event listeners
+    // Register event listeners
     window.addEventListener('hotkeyDeckAction', handleHotkeyDeckAction);
     window.addEventListener('midiHotkey', handleMIDIEvent);
     window.addEventListener('simulateKeyboard', handleSimulateKeyboard);
@@ -275,14 +287,14 @@ function App() {
     };
   }, [isPlaying, moods, volume]);
 
-  // ✅ Enhanced App Initialization
+  // Enhanced App Initialization
   useEffect(() => {
     const initializeEnhancedApp = async () => {
       try {
-        console.log('🚀 Enhanced App: Starting ENHANCED initialization...');
-        setInitializationProgress({ step: 'Initializing Enhanced core services...', progress: 10 });
+        console.log('Enhanced App: Starting enhanced initialization...');
+        setInitializationProgress({ step: 'Initializing core services...', progress: 10 });
         
-        // ✅ Make ENHANCED services globally available
+        // Make enhanced services globally available
         window.enhancedGlobalStateService = enhancedGlobalStateService;
         window.configService = configService;
         window.useMoodStore = useMoodStore;
@@ -291,25 +303,24 @@ function App() {
         // Initialize ConfigService
         setInitializationProgress({ step: 'Loading configuration...', progress: 20 });
         await configService.initializeConfig?.();
-        console.log('✅ Enhanced App: ConfigService initialized');
+        console.log('Enhanced App: ConfigService initialized');
         
         // Ensure data directories exist
         setInitializationProgress({ step: 'Setting up data directories...', progress: 30 });
         await fileUtils.ensureDataDirectories();
         
-        // ✅ Load saved mappings with ENHANCED service
-        setInitializationProgress({ step: 'Loading enhanced mappings...', progress: 40 });
+        // Load saved mappings
+        setInitializationProgress({ step: 'Loading saved mappings...', progress: 40 });
         enhancedGlobalStateService.loadMappings();
         
         // Initialize MIDI if enabled
         if (settings.midiEnabled) {
           try {
-            setInitializationProgress({ step: 'Initializing MIDI with enhanced support...', progress: 50 });
-            console.log('🎹 Enhanced App: Initializing MIDI with enhanced support...');
+            setInitializationProgress({ step: 'Initializing MIDI...', progress: 50 });
+            console.log('Enhanced App: Initializing MIDI globally...');
             
             await midiService.initialize();
             
-            // ✅ Register with ENHANCED global state service
             enhancedGlobalStateService.registerService('midi', midiService);
             enhancedGlobalStateService.updateMIDIState({
               connected: true,
@@ -322,7 +333,7 @@ function App() {
               enhancedGlobalStateService.setMIDIMapping(key, mapping, 'MIDIService');
             });
             
-            // Set up enhanced MIDI event handlers
+            // Set up MIDI event handlers
             midiService.onHotkeyAction(handleMIDIHotkey);
             midiService.onVolumeChange(handleGlobalVolumeChange);
             midiService.onMIDIMessage((message) => {
@@ -335,37 +346,36 @@ function App() {
             });
             
             setConnectionStatus(prev => ({ ...prev, midi: true }));
-            console.log('✅ Enhanced App: MIDI Service initialized with enhanced features');
+            console.log('Enhanced App: MIDI Service initialized successfully');
           } catch (error) {
-            console.log('❌ Enhanced App: MIDI not available:', error.message);
+            console.log('Enhanced App: MIDI not available:', error.message);
             enhancedGlobalStateService.updateMIDIState({ connected: false });
             setConnectionStatus(prev => ({ ...prev, midi: false }));
           }
         }
         
-        // ✅ Initialize OBS WebSocket with ENHANCED integration
+        // Initialize OBS WebSocket
         if (settings.obsWebSocketEnabled) {
           try {
-            setInitializationProgress({ step: 'Connecting to OBS with enhanced features...', progress: 60 });
-            console.log('📺 Enhanced App: Initializing OBS with enhanced features...');
+            setInitializationProgress({ step: 'Connecting to OBS...', progress: 60 });
+            console.log('Enhanced App: Initializing OBS WebSocket...');
             
-            // ✅ Register with ENHANCED global state service
             enhancedGlobalStateService.registerService('obs', obsWebSocketService);
             
-            // Set up enhanced OBS event handlers
+            // Set up OBS event handlers
             obsWebSocketService.onConnected(() => {
-              console.log('✅ Enhanced App: OBS connected with enhanced features');
+              console.log('Enhanced App: OBS connected successfully');
               enhancedGlobalStateService.updateOBSState({ connected: true });
               setConnectionStatus(prev => ({ ...prev, obs: true }));
               
-              // ✅ Trigger enhanced discovery with caching
+              // Trigger initial discovery
               setTimeout(() => {
                 enhancedGlobalStateService.discoverOBSDataWithCaching();
-              }, 2000); // Longer delay for proper identification
+              }, 1000);
             });
             
             obsWebSocketService.onDisconnected(() => {
-              console.log('❌ Enhanced App: OBS disconnected');
+              console.log('Enhanced App: OBS disconnected');
               enhancedGlobalStateService.updateOBSState({
                 connected: false,
                 sources: [],
@@ -376,7 +386,7 @@ function App() {
             });
             
             obsWebSocketService.onSourcesDiscovered((sources) => {
-              console.log('✅ Enhanced App: OBS sources discovered with enhanced processing:', sources.length);
+              console.log('Enhanced App: OBS sources discovered:', sources.length);
               enhancedGlobalStateService.updateOBSState({ 
                 sources, 
                 lastSourceDiscovery: Date.now() 
@@ -384,17 +394,17 @@ function App() {
             });
             
             obsWebSocketService.onAudioLevels((data) => {
-              // ✅ Forward to enhanced global state service with throttling
+              // Forward to enhanced global state service with throttling
               enhancedGlobalStateService.updateAudioLevels(data.sourceName, data.levels);
             });
             
             obsWebSocketService.onVolumeChanged((data) => {
-              console.log('✅ Enhanced App: OBS volume changed with enhanced sync:', data);
+              console.log('Enhanced App: OBS volume changed:', data);
               enhancedGlobalStateService.updateSourceVolume(data.sourceName, data.volumeDb);
             });
             
             obsWebSocketService.onMuteChanged((data) => {
-              console.log('✅ Enhanced App: OBS mute changed with enhanced sync:', data);
+              console.log('Enhanced App: OBS mute changed:', data);
               // Update source mute state
               const currentSources = enhancedGlobalStateService.getAudioSources();
               const updatedSources = currentSources.map(source => 
@@ -412,52 +422,52 @@ function App() {
               settings.obsWebSocketPassword || ''
             );
             
-            console.log('✅ Enhanced App: OBS WebSocket initialized with enhanced features');
+            console.log('Enhanced App: OBS WebSocket initialized successfully');
           } catch (error) {
-            console.log('❌ Enhanced App: OBS WebSocket not available:', error.message);
+            console.log('Enhanced App: OBS WebSocket not available:', error.message);
             enhancedGlobalStateService.updateOBSState({ connected: false });
             setConnectionStatus(prev => ({ ...prev, obs: false }));
           }
         }
 
         // Initialize Audio Service
-        setInitializationProgress({ step: 'Setting up enhanced audio service...', progress: 80 });
+        setInitializationProgress({ step: 'Setting up audio service...', progress: 80 });
         
         audioService.onSongEndCallback(() => {
           nextSong();
         });
 
         audioService.onLoadCallback((song) => {
-          console.log('✅ Enhanced App: Song loaded:', song.title);
+          console.log('Enhanced App: Song loaded:', song.title);
         });
 
         audioService.onErrorCallback((error) => {
-          console.error('❌ Enhanced App: Audio error:', error);
+          console.error('Enhanced App: Audio error:', error);
           setIsPlaying(false);
         });
 
         audioService.setVolume(volume);
 
-        setInitializationProgress({ step: 'Enhanced initialization complete!', progress: 100 });
+        setInitializationProgress({ step: 'Initialization complete!', progress: 100 });
         
         // Complete initialization
         setTimeout(() => {
           setIsLoading(false);
-          console.log('🎉 Enhanced App: ENHANCED initialization completed successfully!');
+          console.log('Enhanced App: Enhanced initialization completed successfully');
         }, 500);
         
       } catch (error) {
-        console.error('❌ Enhanced App: Failed to initialize:', error);
-        setInitializationProgress({ step: 'Enhanced initialization failed', progress: 100 });
+        console.error('Enhanced App: Failed to initialize:', error);
+        setInitializationProgress({ step: 'Initialization failed', progress: 100 });
         setTimeout(() => setIsLoading(false), 1000);
       }
     };
 
     initializeEnhancedApp();
 
-    // ✅ Enhanced cleanup on unmount
+    // Enhanced cleanup on unmount
     return () => {
-      console.log('🧹 Enhanced App: Starting enhanced cleanup...');
+      console.log('Enhanced App: Starting cleanup...');
       
       try {
         audioService.destroy();
@@ -465,19 +475,19 @@ function App() {
         enhancedGlobalStateService.destroy();
         configService.destroy?.();
         
-        console.log('✅ Enhanced App: Enhanced cleanup completed');
+        console.log('Enhanced App: Cleanup completed');
       } catch (error) {
-        console.log('❌ Enhanced App: Error during enhanced cleanup:', error.message);
+        console.log('Enhanced App: Error during cleanup:', error.message);
       }
     };
   }, []);
 
-  // ✅ Enhanced Song Change Handler
+  // Enhanced Song Change Handler
   useEffect(() => {
     if (currentSong) {
       const handleEnhancedSongChange = async () => {
         try {
-          console.log('🎵 Enhanced App: Handling enhanced song change:', currentSong.title);
+          console.log('Enhanced App: Handling song change:', currentSong.title);
           
           await audioService.loadSong(currentSong);
           
@@ -485,18 +495,18 @@ function App() {
             audioService.play();
           }
           
-          // ✅ Enhanced OBS integration with better error handling
+          // Enhanced OBS integration with better error handling
           const currentMood = moods.find(m => m.id === activeMood);
           if (currentMood && settings.obsWebSocketEnabled && enhancedGlobalStateService.isOBSConnected()) {
             try {
               await obsWebSocketService.updateSongDisplay(currentSong, currentMood, settings);
-              console.log('✅ Enhanced App: Song display updated with enhanced browser source refresh');
+              console.log('Enhanced App: Song display updated with browser source refresh');
             } catch (error) {
-              console.log('❌ Enhanced App: Failed to update OBS song display:', error.message);
+              console.log('Enhanced App: Failed to update OBS song display:', error.message);
             }
           }
         } catch (error) {
-          console.error('❌ Enhanced App: Failed to load song:', error);
+          console.error('Enhanced App: Failed to load song:', error);
           setIsPlaying(false);
         }
       };
@@ -519,7 +529,7 @@ function App() {
     audioService.setVolume(volume);
   }, [volume]);
 
-  // ✅ Enhanced Loading Screen
+  // Enhanced Loading Screen
   if (isLoading) {
     return (
       <LoadingScreen 
@@ -532,7 +542,7 @@ function App() {
 
   return (
     <div className="flex h-screen bg-primary text-white overflow-hidden">
-      {/* ✅ Enhanced Sidebar with Connection Status */}
+      {/* Enhanced Sidebar with Connection Status */}
       <Sidebar 
         currentView={currentView} 
         onViewChange={setCurrentView}
@@ -540,7 +550,7 @@ function App() {
         enhancedMode={true}
       />
 
-      {/* ✅ Enhanced Main Content */}
+      {/* Enhanced Main Content */}
       <div className="flex-1 flex flex-col">
         <AnimatePresence mode="wait">
           <motion.div
@@ -559,7 +569,7 @@ function App() {
           </motion.div>
         </AnimatePresence>
 
-        {/* ✅ Enhanced Player with Connection Status */}
+        {/* Enhanced Player with Connection Status */}
         <Player 
           connectionStatus={connectionStatus}
           enhancedMode={true}

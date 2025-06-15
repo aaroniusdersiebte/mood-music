@@ -6,7 +6,7 @@ import {
   Grid, 
   Volume2, 
   Sliders, 
-  Gamepad2, 
+  
   Target, 
   Layout,
   Sparkles
@@ -42,12 +42,7 @@ const Sidebar = ({ currentView, onViewChange }) => {
       icon: Target,
       description: 'Configurable button decks'
     },
-    {
-      id: 'midi',
-      label: 'MIDI Mapping',
-      icon: Gamepad2,
-      description: 'Configure MIDI controller'
-    },
+
     {
       id: 'settings',
       label: 'Settings',

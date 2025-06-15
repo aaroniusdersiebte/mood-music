@@ -15,42 +15,45 @@
     "electron": "electron .",
     "electron-dev": "ELECTRON_IS_DEV=true electron .",
     "dist": "npm run build-fix && electron-builder",
-    "dist-safe": "npm run build-fix && electron-builder --publish=never"
+    "dist-safe": "npm run build-fix && electron-builder --publish=never",
+    "build-fallback": "react-scripts build",
+    "dist-fallback": "npm run build-fallback && electron-builder"
   },
   "dependencies": {
+    "@tailwindcss/forms": "^0.5.6",
+    "easymidi": "^3.1.0",
+    "electron-is-dev": "^2.0.0",
+    "framer-motion": "^10.16.4",
+    "howler": "^2.2.3",
+    "lucide-react": "^0.263.1",
+    "midi": "^2.0.0",
+    "obs-websocket-js": "^5.0.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
-    "howler": "^2.2.3",
-    "zustand": "^4.4.7",
-    "framer-motion": "^10.16.4",
-    "lucide-react": "^0.263.1",
-    "@tailwindcss/forms": "^0.5.6",
-    "electron-is-dev": "^2.0.0",
-    "midi": "^2.0.0",
-    "easymidi": "^3.1.0",
-    "obs-websocket-js": "^5.0.5",
+    "webmidi": "^3.1.8",
     "ws": "^8.14.2",
-    "webmidi": "^3.1.8"
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
+    "@craco/craco": "^7.1.0",
+    "@types/howler": "^2.2.9",
+    "autoprefixer": "^10.4.16",
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.0",
     "electron": "^26.6.1",
     "electron-builder": "^24.6.4",
-    "tailwindcss": "^3.3.5",
-    "autoprefixer": "^10.4.16",
-    "postcss": "^8.4.31",
-    "@types/howler": "^2.2.9",
-    "@craco/craco": "^7.1.0",
-    "stream-browserify": "^3.0.0",
-    "path-browserify": "^1.0.1",
-    "os-browserify": "^0.3.0",
-    "crypto-browserify": "^3.12.0",
-    "buffer": "^6.0.3",
-    "process": "^0.11.10",
     "https-browserify": "^1.0.0",
-    "url": "^0.11.0",
+    "os-browserify": "^0.3.0",
+    "path-browserify": "^1.0.1",
+    "postcss": "^8.4.31",
+    "process": "^0.11.10",
     "querystring-es3": "^0.2.1",
-    "stream-http": "^3.2.0"
+    "stream-browserify": "^3.0.0",
+    "stream-http": "^3.2.0",
+    "tailwindcss": "^3.3.5",
+    "url": "^0.11.0",
+    "webpack": "^5.89.0"
   },
   "browserslist": {
     "production": [
@@ -80,7 +83,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Volume2, VolumeX, Mic, Monitor, Headphones, Power, Activity, Eye, EyeOff, Settings, TestTube, Bug } from 'lucide-react';
+import { Volume2, VolumeX, Mic, Monitor, Headphones, Power, Activity, Eye, EyeOff, LayoutDashboard, Layout } from 'lucide-react';
 import globalStateService from '../services/globalStateService';
 import useMoodStore from '../stores/moodStore';
 import AudioLevelMeter from './AudioLevelMeter';
@@ -20,12 +20,6 @@ const AudioMixer = () => {
   const [learningMidi, setLearningMidi] = useState(null);
   const [sourceMidiMappings, setSourceMidiMappings] = useState({});
   const [draggedSlider, setDraggedSlider] = useState(null);
-  
-  // 🧪 Debug State
-  const [debugMode, setDebugMode] = useState(false);
-  const [testMode, setTestMode] = useState(false);
-  const [debugInfo, setDebugInfo] = useState({});
-  const debugLogCountRef = useRef(0);
 
   useEffect(() => {
     console.log('AudioMixer: Initializing with GlobalStateService');
@@ -58,22 +52,15 @@ const AudioMixer = () => {
       
       // WICHTIG: Update realTimeAudioLevels aus dem OBS State
       if (newState.realTimeAudioLevels) {
-        const levelsObj = {};
-        if (newState.realTimeAudioLevels instanceof Map) {
-          newState.realTimeAudioLevels.forEach((value, key) => {
-            levelsObj[key] = value;
-          });
-        } else {
-          Object.assign(levelsObj, newState.realTimeAudioLevels);
-        }
-        setRealTimeAudioLevels(levelsObj);
-        
-        // Debug: Log erste 3 Updates (mit useRef statt this)
-        if (debugLogCountRef.current === undefined) debugLogCountRef.current = 0;
-        if (debugLogCountRef.current < 3) {
-          console.log('🎵 AudioMixer: Updated realTimeAudioLevels:', Object.keys(levelsObj));
-          debugLogCountRef.current++;
-        }
+      const levelsObj = {};
+      if (newState.realTimeAudioLevels instanceof Map) {
+      newState.realTimeAudioLevels.forEach((value, key) => {
+      levelsObj[key] = value;
+      });
+      } else {
+      Object.assign(levelsObj, newState.realTimeAudioLevels);
+      }
+      setRealTimeAudioLevels(levelsObj);
       }
     };
     
@@ -81,16 +68,6 @@ const AudioMixer = () => {
       // 🎵 Real-time audio level updates für Visualisierung
       if (data.allLevels) {
         setRealTimeAudioLevels(data.allLevels);
-        
-        // 🧪 Debug Info Update
-        if (debugMode) {
-          setDebugInfo(prev => ({
-            ...prev,
-            lastAudioUpdate: Date.now(),
-            audioSourcesWithData: Object.keys(data.allLevels).length,
-            totalAudioEvents: (prev.totalAudioEvents || 0) + 1
-          }));
-        }
       }
     };
     
@@ -186,67 +163,9 @@ const AudioMixer = () => {
       globalStateService.off('audioLevelsUpdated', handleAudioLevelsUpdate);
       globalStateService.off('sourceVolumeUpdated', handleSourceVolumeUpdate);
     };
-  }, [learningMidi, draggedSlider, debugMode]);
+  }, [learningMidi, draggedSlider]);
 
-  // 🧪 Test Functions
-  const testAudioVisualization = () => {
-    console.log('🧪 Testing audio visualization...');
-    setTestMode(true);
-    
-    // Force test für OBS Service
-    const obsService = globalStateService.services.obs;
-    if (obsService && obsService.forceAudioLevelTest) {
-      obsService.forceAudioLevelTest();
-    }
-    
-    // Stoppe Test nach 10 Sekunden
-    setTimeout(() => {
-      setTestMode(false);
-      console.log('🧪 Audio visualization test completed');
-    }, 10000);
-  };
 
-  const testOBSConnection = async () => {
-    console.log('🧪 Testing OBS connection...');
-    const obsService = globalStateService.services.obs;
-    if (obsService) {
-      try {
-        const version = await obsService.testConnection();
-        if (version) {
-          console.log('✅ OBS connection test successful:', version);
-          await obsService.testEventSubscription();
-        }
-      } catch (error) {
-        console.error('❌ OBS connection test failed:', error);
-      }
-    }
-  };
-
-  const debugOBSEvents = () => {
-    console.log('🔧 Debugging OBS events...');
-    console.log('=== AUDIO MIXER DEBUG INFO ===');
-    console.log('Connected:', connected);
-    console.log('Audio Sources (Total):', audioSources.length);
-    console.log('Real-time Audio Levels (Keys):', Object.keys(realTimeAudioLevels));
-    console.log('Real-time Audio Levels (Count):', Object.keys(realTimeAudioLevels).length);
-    
-    // Detaillierte Source-Analyse
-    console.log('\n--- DETAILED SOURCE ANALYSIS ---');
-    audioSources.forEach(source => {
-      const hasAudioData = realTimeAudioLevels[source.name];
-      const audioInfo = hasAudioData ? 
-        `L:${hasAudioData.left?.toFixed(1)}dB R:${hasAudioData.right?.toFixed(1)}dB ${hasAudioData.isReal ? '(REAL)' : '(TEST)'}` : 
-        'NO DATA';
-      console.log(`🎵 ${source.name}: ${audioInfo}`);
-    });
-    
-    console.log('\n--- GLOBAL STATE SERVICE DATA ---');
-    const obsState = globalStateService.getOBSState();
-    console.log('OBS State Audio Levels Keys:', Object.keys(obsState.audioLevels || {}));
-    console.log('OBS State realTimeAudioLevels size:', obsState.realTimeAudioLevels?.size || 0);
-    
-    console.log('=== END DEBUG ===');
-  };
 
   // MIDI Learning Functions
   const startMidiLearning = (sourceName, type) => {
@@ -289,15 +208,6 @@ const AudioMixer = () => {
       globalStateService.setSourceHidden(sourceName, false);
     });
     setHiddenSources(new Set());
-  };
-
-  const hideAllSources = () => {
-    const allSourceNames = audioSources.map(s => s.name);
-    // 🚀 Benachrichtige GlobalStateService für alle Sources
-    allSourceNames.forEach(sourceName => {
-      globalStateService.setSourceHidden(sourceName, true);
-    });
-    setHiddenSources(new Set(allSourceNames));
   };
 
   // Volume and Mute Control
@@ -505,55 +415,12 @@ const AudioMixer = () => {
                 <span className="text-xs text-gray-400">MIDI</span>
               </>
             )}
-            {testMode && (
-              <>
-                <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-                <span className="text-xs text-orange-400">TEST MODE</span>
-              </>
-            )}
           </div>
         </div>
         
         <div className="flex space-x-2">
-          {/* 🧪 Debug & Test Buttons */}
-          <button
-            onClick={() => setDebugMode(!debugMode)}
-            className={`p-2 rounded transition-colors ${
-              debugMode 
-                ? 'bg-blue-500/30 text-blue-300' 
-                : 'text-blue-400 hover:text-blue-300'
-            }`}
-            title="Toggle debug mode"
-          >
-            <Bug className="w-4 h-4" />
-          </button>
-          
-          <button
-            onClick={testAudioVisualization}
-            className="p-2 text-orange-400 hover:text-orange-300 transition-colors"
-            title="Test audio visualization (10s)"
-          >
-            <TestTube className="w-4 h-4" />
-          </button>
-          
           {connected && (
             <>
-              <button
-                onClick={showAllSources}
-                className="p-2 text-green-400 hover:text-green-300 transition-colors"
-                title="Show all sources"
-              >
-                <Eye className="w-4 h-4" />
-              </button>
-              
-              <button
-                onClick={hideAllSources}
-                className="p-2 text-gray-400 hover:text-gray-300 transition-colors"
-                title="Hide all sources"
-              >
-                <EyeOff className="w-4 h-4" />
-              </button>
-              
               <button
                 onClick={refreshSources}
                 className="p-2 text-blue-400 hover:text-blue-300 transition-colors"
@@ -563,19 +430,44 @@ const AudioMixer = () => {
               </button>
               
               <button
-                onClick={testOBSConnection}
-                className="p-2 text-purple-400 hover:text-purple-300 transition-colors"
-                title="Test OBS connection & events"
+                onClick={async () => {
+                  try {
+                    console.log('Adding AudioMixer to Dashboard...');
+                    
+                    // Create the event
+                    const event = new CustomEvent('addAudioMixerToWidget', {
+                      detail: { 
+                        sources: audioSources,
+                        type: 'audio-mixer',
+                        size: { width: 300, height: 400 },
+                        position: { x: 20, y: 20 }
+                      }
+                    });
+                    
+                    // Dispatch the event
+                    window.dispatchEvent(event);
+                    
+                    // Wait a moment to ensure event is processed
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    // Show success message
+                    console.log('✅ Audio Mixer wurde zum Dashboard hinzugefügt!');
+                    
+                    // Optional: Switch to dashboard view
+                    const switchToDashboard = new CustomEvent('switchToView', {
+                      detail: { view: 'dashboard' }
+                    });
+                    window.dispatchEvent(switchToDashboard);
+                    
+                  } catch (error) {
+                    console.error('Failed to add Audio Mixer to Dashboard:', error);
+                    alert('Fehler beim Hinzufügen zum Dashboard. Bitte versuche es erneut.');
+                  }
+                }}
+                className="p-2 text-blue-400 hover:text-blue-300 transition-colors"
+                title="Add to Dashboard"
               >
-                <Settings className="w-4 h-4" />
-              </button>
-              
-              <button
-                onClick={debugOBSEvents}
-                className="p-2 text-yellow-400 hover:text-yellow-300 transition-colors"
-                title="Debug OBS events (check console)"
-              >
-                <Power className="w-4 h-4" />
+                <LayoutDashboard className="w-4 h-4" />
               </button>
             </>
           )}
@@ -592,18 +484,7 @@ const AudioMixer = () => {
         </div>
       </div>
 
-      {/* 🧪 Debug Info Panel */}
-      {debugMode && (
-        <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-          <div className="text-sm text-blue-400 font-medium mb-2">Debug Information</div>
-          <div className="grid grid-cols-2 gap-2 text-xs text-blue-300">
-            <div>Audio Sources: {audioSources.length}</div>
-            <div>Real-time Levels: {Object.keys(realTimeAudioLevels).length}</div>
-            <div>Last Update: {debugInfo.lastAudioUpdate ? new Date(debugInfo.lastAudioUpdate).toLocaleTimeString() : 'Never'}</div>
-            <div>Total Events: {debugInfo.totalAudioEvents || 0}</div>
-          </div>
-        </div>
-      )}
+
 
       {/* MIDI Activity Monitor */}
       {lastMIDIMessage && (
@@ -666,7 +547,6 @@ const AudioMixer = () => {
                       width={150}
                       height={32}
                       style="horizontal"
-                      debug={debugMode}
                     />
                   </div>
 

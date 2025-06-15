@@ -1,9 +1,10 @@
-// Enhanced Configuration Service - File-based storage for Electron
-import { readFile, writeFile, mkdir, existsSync } from 'fs/promises';
+// Enhanced Configuration Service - File-based storage for Electron with EXE support
+// Prioritizes file-based storage and uses localStorage only as emergency fallback
 import { join } from 'path';
 
 class ConfigService {
   constructor() {
+    this.isElectron = this.detectElectron();
     this.configDir = this.getConfigDirectory();
     this.configFiles = {
       decks: 'hotkey-decks.json',
@@ -15,37 +16,96 @@ class ConfigService {
     this.cache = new Map();
     this.saveQueue = new Map();
     this.initialized = false;
+    this.fileSystemAvailable = false;
     
     this.initializeConfig();
   }
 
+  detectElectron() {
+    // Check for Electron environment (including EXE builds)
+    return (
+      typeof window !== 'undefined' && 
+      (
+        window.electronAPI || 
+        window.electron || 
+        window.require ||
+        (window.process && window.process.type === 'renderer') ||
+        (navigator.userAgent && navigator.userAgent.includes('Electron'))
+      )
+    );
+  }
+
   getConfigDirectory() {
-    // Electron app data directory
-    if (window.electronAPI && window.electronAPI.getAppDataPath) {
-      return join(window.electronAPI.getAppDataPath(), 'mood-music', 'config');
+    if (this.isElectron) {
+      // Try different Electron API variants for EXE compatibility
+      const electronAPI = window.electronAPI || window.electron;
+      
+      if (electronAPI && electronAPI.getAppDataPath) {
+        try {
+          const appDataPath = electronAPI.getAppDataPath();
+          return join(appDataPath, 'mood-music', 'config');
+        } catch (error) {
+          console.warn('ConfigService: Could not get app data path:', error.message);
+        }
+      }
+      
+      // Fallback for Electron EXE builds
+      if (window.process && window.process.env) {
+        const userDataPath = window.process.env.APPDATA || window.process.env.HOME;
+        if (userDataPath) {
+          return join(userDataPath, 'mood-music', 'config');
+        }
+      }
     }
     
-    // Fallback for development
-    return join(process.cwd(), 'config');
+    // Development fallback
+    return './config';
   }
 
   async initializeConfig() {
     try {
-      // Ensure config directory exists
-      if (!existsSync(this.configDir)) {
-        await mkdir(this.configDir, { recursive: true });
-        console.log('ConfigService: Created config directory:', this.configDir);
-      }
-
+      console.log('ConfigService: Initializing for', this.isElectron ? 'Electron/EXE' : 'Web', 'environment');
+      console.log('ConfigService: Config directory:', this.configDir);
+      
+      // Try to establish file system access
+      await this.testFileSystemAccess();
+      
       // Load all configurations into cache
       await this.loadAllConfigs();
       this.initialized = true;
       
-      console.log('ConfigService: Initialized successfully');
+      console.log('ConfigService: Initialized successfully with', this.fileSystemAvailable ? 'file' : 'localStorage', 'storage');
     } catch (error) {
       console.error('ConfigService: Initialization failed:', error);
-      // Fallback to memory-only mode
+      // Fallback to localStorage-only mode
+      this.fileSystemAvailable = false;
+      await this.loadAllConfigs();
       this.initialized = true;
+      console.log('ConfigService: Fallback to localStorage mode');
+    }
+  }
+
+  async testFileSystemAccess() {
+    try {
+      const electronAPI = window.electronAPI || window.electron;
+      
+      if (electronAPI && electronAPI.ensureDirectory) {
+        await electronAPI.ensureDirectory(this.configDir);
+        console.log('ConfigService: File system access confirmed');
+        this.fileSystemAvailable = true;
+      } else if (electronAPI && electronAPI.writeFile) {
+        // Test write access with a temporary file
+        const testPath = join(this.configDir, '.test');
+        await electronAPI.writeFile(testPath, 'test');
+        this.fileSystemAvailable = true;
+        console.log('ConfigService: File system access confirmed via write test');
+      } else {
+        console.log('ConfigService: No Electron file system API available, using localStorage');
+        this.fileSystemAvailable = false;
+      }
+    } catch (error) {
+      console.warn('ConfigService: File system test failed:', error.message);
+      this.fileSystemAvailable = false;
     }
   }
 
@@ -179,15 +239,35 @@ class ConfigService {
     const filePath = join(this.configDir, this.configFiles[type]);
     
     try {
-      const data = await readFile(filePath, 'utf8');
-      const parsed = JSON.parse(data);
-      this.cache.set(type, parsed);
-      return parsed;
+      if (this.fileSystemAvailable) {
+        // Try file-based storage first
+        const electronAPI = window.electronAPI || window.electron;
+        
+        if (electronAPI && electronAPI.readFile) {
+          const data = await electronAPI.readFile(filePath);
+          const parsed = JSON.parse(data);
+          this.cache.set(type, parsed);
+          console.log(`ConfigService: Loaded ${type} from file`);
+          return parsed;
+        }
+      }
+      
+      // Fallback to localStorage
+      const stored = localStorage.getItem(`config_${type}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        this.cache.set(type, parsed);
+        console.log(`ConfigService: Loaded ${type} from localStorage`);
+        return parsed;
+      }
+      
+      throw new Error('No config found');
     } catch (error) {
-      if (error.code === 'ENOENT') {
+      if (error.code === 'ENOENT' || error.message.includes('not found') || error.message === 'No config found') {
         // File doesn't exist, create with defaults
+        console.log(`ConfigService: Creating default ${type} config`);
         const defaultConfig = this.getDefaultConfig(type);
-        await this.saveConfig(type, defaultConfig);
+        await this.saveConfig(type, defaultConfig, true);
         return defaultConfig;
       }
       throw error;
@@ -213,14 +293,35 @@ class ConfigService {
 
   async writeToDisk(type, data) {
     const filePath = join(this.configDir, this.configFiles[type]);
+    const jsonData = JSON.stringify(data, null, 2);
+    
+    let success = false;
     
     try {
-      const jsonData = JSON.stringify(data, null, 2);
-      await writeFile(filePath, jsonData, 'utf8');
-      console.log(`ConfigService: Saved ${type} config to disk`);
+      if (this.fileSystemAvailable) {
+        // Try file-based storage first
+        const electronAPI = window.electronAPI || window.electron;
+        
+        if (electronAPI && electronAPI.writeFile) {
+          await electronAPI.writeFile(filePath, jsonData);
+          console.log(`ConfigService: Saved ${type} config to file`);
+          success = true;
+        }
+      }
     } catch (error) {
-      console.error(`ConfigService: Failed to save ${type} config:`, error);
-      throw error;
+      console.warn(`ConfigService: File save failed for ${type}:`, error.message);
+      // Don't throw here, fall back to localStorage
+    }
+    
+    if (!success) {
+      // Always save to localStorage as backup
+      try {
+        localStorage.setItem(`config_${type}`, jsonData);
+        console.log(`ConfigService: Saved ${type} config to localStorage${this.fileSystemAvailable ? ' (backup)' : ''}`);
+      } catch (error) {
+        console.error(`ConfigService: Failed to save ${type} to localStorage:`, error);
+        throw error;
+      }
     }
   }
 
@@ -360,15 +461,26 @@ class ConfigService {
     const backupDir = join(this.configDir, 'backups', timestamp);
     
     try {
-      await mkdir(backupDir, { recursive: true });
+      // Use Electron API for directory creation
+      if (window.electronAPI && window.electronAPI.ensureDirectory) {
+        await window.electronAPI.ensureDirectory(backupDir);
+      }
       
       const backupPromises = Object.entries(this.configFiles).map(async ([type, filename]) => {
         const source = join(this.configDir, filename);
         const dest = join(backupDir, filename);
         
         try {
-          const data = await readFile(source, 'utf8');
-          await writeFile(dest, data, 'utf8');
+          if (window.electronAPI && window.electronAPI.readFile && window.electronAPI.writeFile) {
+            const data = await window.electronAPI.readFile(source);
+            await window.electronAPI.writeFile(dest, data);
+          } else {
+            // Fallback to localStorage backup
+            const stored = localStorage.getItem(`config_${type}`);
+            if (stored) {
+              localStorage.setItem(`backup_${timestamp}_${type}`, stored);
+            }
+          }
         } catch (error) {
           console.warn(`Could not backup ${filename}:`, error.message);
         }

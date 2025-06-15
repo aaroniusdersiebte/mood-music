@@ -16,89 +16,28 @@ import {
   MoreHorizontal
 } from 'lucide-react';
 import configService from '../../services/configService';
+import useMoodStore from '../../stores/moodStore';
 
 const MoodSelectorWidget = ({ component, editMode, onUpdate, onRemove, performanceMode }) => {
-  const [moods, setMoods] = useState([]);
+  // Use the mood store directly
+  const { moods: storeMoods, activeMood, isPlaying: storeIsPlaying, setActiveMood } = useMoodStore();
+  
   const [favorites, setFavorites] = useState([]);
   const [recentlyUsed, setRecentlyUsed] = useState([]);
-  const [currentMood, setCurrentMood] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [viewMode, setViewMode] = useState('grid'); // 'grid', 'list', 'compact'
   const [showContextMenu, setShowContextMenu] = useState(null);
+  
+  // Use store values
+  const moods = storeMoods;
+  const currentMood = moods.find(m => m.id === activeMood);
+  const isPlaying = storeIsPlaying;
 
   useEffect(() => {
-    loadMoods();
     loadMoodShortcuts();
-    
-    // Listen for music state changes
-    const handleMusicStateChange = (state) => {
-      setIsPlaying(state.isPlaying);
-      setCurrentMood(state.currentMood);
-    };
-
-    window.addEventListener('musicStateChanged', handleMusicStateChange);
-    return () => window.removeEventListener('musicStateChanged', handleMusicStateChange);
   }, []);
 
-  const loadMoods = async () => {
-    try {
-      // This should be replaced with your actual mood loading logic
-      const mockMoods = [
-        {
-          id: 'energetic',
-          name: 'Energetic',
-          color: '#ff6b6b',
-          background: '/assets/moods/energetic.jpg',
-          songCount: 45,
-          description: 'High energy tracks for motivation'
-        },
-        {
-          id: 'chill',
-          name: 'Chill',
-          color: '#4ecdc4',
-          background: '/assets/moods/chill.jpg',
-          songCount: 32,
-          description: 'Relaxing vibes for focus'
-        },
-        {
-          id: 'focus',
-          name: 'Focus',
-          color: '#45b7d1',
-          background: '/assets/moods/focus.jpg',
-          songCount: 28,
-          description: 'Concentration music'
-        },
-        {
-          id: 'gaming',
-          name: 'Gaming',
-          color: '#96ceb4',
-          background: '/assets/moods/gaming.jpg',
-          songCount: 52,
-          description: 'Epic gaming soundtracks'
-        },
-        {
-          id: 'ambient',
-          name: 'Ambient',
-          color: '#ffeaa7',
-          background: '/assets/moods/ambient.jpg',
-          songCount: 19,
-          description: 'Atmospheric background music'
-        },
-        {
-          id: 'dark',
-          name: 'Dark',
-          color: '#6c5ce7',
-          background: '/assets/moods/dark.jpg',
-          songCount: 37,
-          description: 'Dark and mysterious tracks'
-        }
-      ];
-      setMoods(mockMoods);
-    } catch (error) {
-      console.error('Failed to load moods:', error);
-    }
-  };
+
 
   const loadMoodShortcuts = () => {
     const shortcuts = configService.getMoodShortcuts();
@@ -121,14 +60,14 @@ const MoodSelectorWidget = ({ component, editMode, onUpdate, onRemove, performan
       const updatedRecent = [mood.id, ...recentlyUsed.filter(id => id !== mood.id)].slice(0, 10);
       setRecentlyUsed(updatedRecent);
       
-      // Trigger mood playback
+      // Use store action to set active mood
+      setActiveMood(mood.id);
+      
+      // Trigger mood playback event for other components
       const event = new CustomEvent('playMood', {
         detail: { mood }
       });
       window.dispatchEvent(event);
-      
-      setCurrentMood(mood);
-      setIsPlaying(true);
       
       // Save updated shortcuts
       await saveMoodShortcuts();
@@ -217,7 +156,7 @@ const MoodSelectorWidget = ({ component, editMode, onUpdate, onRemove, performan
           <>
             <p className="text-xs text-gray-400 mb-2">{mood.description}</p>
             <div className="flex items-center justify-between text-xs text-gray-500">
-              <span>{mood.songCount} songs</span>
+              <span>{mood.songs?.length || 0} songs</span>
               {isCurrent && (
                 <div className="flex items-center space-x-1 text-blue-400">
                   {isPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
