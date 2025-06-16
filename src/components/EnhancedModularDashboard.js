@@ -29,11 +29,13 @@ import {
   Layers
 } from 'lucide-react';
 import configService from '../services/configService';
-import enhancedGlobalStateService from '../services/enhancedGlobalStateService';
+import globalStateService from '../services/globalStateService';
 import MoodSelectorWidget from './dashboard/MoodSelectorWidget';
-import EnhancedAudioMixerWidget from './dashboard/EnhancedAudioMixerWidget';
+import UnifiedAudioMixerWidget from './dashboard/UnifiedAudioMixerWidget';
+import AudioDeckWidget from './dashboard/AudioDeckWidget';
 import EnhancedHotkeyDeckWidget from './dashboard/EnhancedHotkeyDeckWidget';
 import DashboardDeckEditor from './dashboard/DashboardDeckEditor';
+import audioDeckService from '../services/audioDeckService';
 
 const EnhancedModularDashboard = () => {
   const [dashboardLayout, setDashboardLayout] = useState(null);
@@ -75,9 +77,19 @@ const EnhancedModularDashboard = () => {
       type: 'audio-mixer',
       name: 'Audio Mixer',
       icon: Volume2,
-      description: 'Enhanced OBS audio source volume controls with real-time levels',
+      description: 'Unified OBS audio source volume controls with real-time levels and MIDI support',
       defaultSize: { width: 280, height: 400 },
       color: 'green',
+      category: 'Audio',
+      enhanced: true
+    },
+    {
+      type: 'audio-deck',
+      name: 'Audio Deck',
+      icon: Layers,
+      description: 'Dedicated audio deck with grouped sources, dynamic orientation and MIDI control',
+      defaultSize: { width: 280, height: 400 },
+      color: 'cyan',
       category: 'Audio',
       enhanced: true
     },
@@ -114,7 +126,7 @@ const EnhancedModularDashboard = () => {
   ];
 
   useEffect(() => {
-    console.log('Enhanced ModularDashboard: Initializing...');
+    console.log('Unified ModularDashboard: Initializing...');
     
     initializeDashboard();
     setupEventListeners();
@@ -128,7 +140,7 @@ const EnhancedModularDashboard = () => {
   const initializeDashboard = async () => {
     try {
       // Set dashboard edit mode in global service
-      enhancedGlobalStateService.setDashboardEditMode(editMode);
+      globalStateService.setDashboardEditMode(editMode);
       
       // Load dashboard layout
       await loadDashboard();
@@ -140,38 +152,40 @@ const EnhancedModularDashboard = () => {
       // Update connection status
       updateConnectionStatus();
       
-      console.log('Enhanced ModularDashboard: Initialization completed');
+      console.log('Unified ModularDashboard: Initialization completed');
     } catch (error) {
-      console.error('Enhanced ModularDashboard: Failed to initialize:', error);
+      console.error('Unified ModularDashboard: Failed to initialize:', error);
       createDefaultDashboard();
     }
   };
 
   const setupEventListeners = () => {
-    // Enhanced Global State Service listeners
-    enhancedGlobalStateService.on('obsStateChanged', handleOBSStateChange);
-    enhancedGlobalStateService.on('midiStateChanged', handleMIDIStateChange);
-    enhancedGlobalStateService.on('contextMenuChanged', handleContextMenuChange);
-    enhancedGlobalStateService.on('widgetRegistered', handleWidgetRegistered);
-    enhancedGlobalStateService.on('widgetUnregistered', handleWidgetUnregistered);
+    // Unified Global State Service listeners
+    globalStateService.on('obsStateChanged', handleOBSStateChange);
+    globalStateService.on('midiStateChanged', handleMIDIStateChange);
+    globalStateService.on('contextMenuChanged', handleContextMenuChange);
+    globalStateService.on('widgetRegistered', handleWidgetRegistered);
+    globalStateService.on('widgetUnregistered', handleWidgetUnregistered);
     
     // Window events
     window.addEventListener('openDeckEditor', handleOpenDeckEditor);
     window.addEventListener('addAudioMixerToWidget', handleAddAudioMixerWidget);
+    window.addEventListener('addAudioDeckToWidget', handleAddAudioDeckWidget);
     window.addEventListener('resize', handleWindowResize);
     window.addEventListener('beforeunload', handleBeforeUnload);
   };
 
   const cleanup = () => {
     // Remove event listeners
-    enhancedGlobalStateService.off('obsStateChanged', handleOBSStateChange);
-    enhancedGlobalStateService.off('midiStateChanged', handleMIDIStateChange);
-    enhancedGlobalStateService.off('contextMenuChanged', handleContextMenuChange);
-    enhancedGlobalStateService.off('widgetRegistered', handleWidgetRegistered);
-    enhancedGlobalStateService.off('widgetUnregistered', handleWidgetUnregistered);
+    globalStateService.off('obsStateChanged', handleOBSStateChange);
+    globalStateService.off('midiStateChanged', handleMIDIStateChange);
+    globalStateService.off('contextMenuChanged', handleContextMenuChange);
+    globalStateService.off('widgetRegistered', handleWidgetRegistered);
+    globalStateService.off('widgetUnregistered', handleWidgetUnregistered);
     
     window.removeEventListener('openDeckEditor', handleOpenDeckEditor);
     window.removeEventListener('addAudioMixerToWidget', handleAddAudioMixerWidget);
+    window.removeEventListener('addAudioDeckToWidget', handleAddAudioDeckWidget);
     window.removeEventListener('resize', handleWindowResize);
     window.removeEventListener('beforeunload', handleBeforeUnload);
     
@@ -194,7 +208,7 @@ const EnhancedModularDashboard = () => {
       }
     }, interval);
     
-    console.log('Enhanced ModularDashboard: Auto-save enabled with', interval/1000, 'second interval');
+    console.log('Unified ModularDashboard: Auto-save enabled with', interval/1000, 'second interval');
   };
 
   // Event Handlers
@@ -211,7 +225,7 @@ const EnhancedModularDashboard = () => {
     // Handle context menu conflicts between dashboard and widgets
     if (contextMenuData && contextMenuData.id.startsWith('dashboard')) {
       // Dashboard owns this context menu
-      console.log('Enhanced ModularDashboard: Taking control of context menu');
+      console.log('Unified ModularDashboard: Taking control of context menu');
     } else if (contextMenuData) {
       // Widget owns this context menu - clear dashboard context menu
       setShowContextMenu(null);
@@ -219,23 +233,23 @@ const EnhancedModularDashboard = () => {
   }, []);
 
   const handleWidgetRegistered = useCallback((data) => {
-    console.log('Enhanced ModularDashboard: Widget registered:', data.widgetId, data.widgetType);
+    console.log('Unified ModularDashboard: Widget registered:', data.widgetId, data.widgetType);
     updateDashboardStats();
   }, []);
 
   const handleWidgetUnregistered = useCallback((data) => {
-    console.log('Enhanced ModularDashboard: Widget unregistered:', data.widgetId);
+    console.log('Unified ModularDashboard: Widget unregistered:', data.widgetId);
     updateDashboardStats();
   }, []);
 
   const handleOpenDeckEditor = useCallback((event) => {
-    console.log('Enhanced ModularDashboard: Opening deck editor for:', event.detail);
+    console.log('Unified ModularDashboard: Opening deck editor for:', event.detail);
     const { deckId, buttonKey } = event.detail;
     setDeckEditor({ isOpen: true, deckId, buttonKey });
   }, []);
 
   const handleAddAudioMixerWidget = useCallback((event) => {
-    console.log('Enhanced ModularDashboard: Adding AudioMixer widget', event.detail);
+    console.log('Unified ModularDashboard: Adding AudioMixer widget', event.detail);
     
     if (!dashboardLayout) return;
     
@@ -257,7 +271,72 @@ const EnhancedModularDashboard = () => {
     
     addComponentToLayout(newComponent);
     
-    console.log('✅ Enhanced ModularDashboard: AudioMixer widget added successfully');
+    console.log('✅ Unified ModularDashboard: AudioMixer widget added successfully');
+  }, [dashboardLayout]);
+
+  const handleAddAudioDeckWidget = useCallback((event) => {
+    console.log('🔧 Unified ModularDashboard: Adding AudioDeck widget', event.detail);
+    
+    if (!dashboardLayout) {
+      console.error('Unified ModularDashboard: No dashboard layout available');
+      return;
+    }
+    
+    const { 
+      id, 
+      deckId, 
+      size, 
+      position, 
+      deckName, 
+      deckColor, 
+      orientation, 
+      showMeters 
+    } = event.detail;
+    
+    // Verify the deck exists
+    const deck = audioDeckService.getDeck(deckId);
+    if (!deck) {
+      console.error('Unified ModularDashboard: Audio deck not found:', deckId);
+      alert(`❌ Audio deck not found: ${deckId}`);
+      return;
+    }
+    
+    // Check if a widget for this deck already exists
+    const existingWidget = dashboardLayout.layout.components.find(
+      comp => comp.type === 'audio-deck' && comp.deckId === deckId
+    );
+    
+    if (existingWidget) {
+      console.log('Unified ModularDashboard: Audio deck widget already exists, bringing to front');
+      updateComponent(existingWidget.id, { 
+        zIndex: getHighestZIndex() + 1,
+        visible: true 
+      });
+      alert(`ℹ️ Audio Deck "${deck.name}" is already on the dashboard!`);
+      return;
+    }
+    
+    const newComponent = {
+      id: id || `audio-deck-${deckId}-${Date.now()}`,
+      type: 'audio-deck',
+      position: position || findFreePosition(size || { width: 280, height: 400 }),
+      size: size || { width: 280, height: 400 },
+      visible: true,
+      locked: false,
+      zIndex: getHighestZIndex() + 1,
+      deckId: deckId,
+      orientation: orientation || deck.orientation || 'vertical',
+      showMeters: showMeters !== undefined ? showMeters : (deck.showMeters !== false),
+      deckName: deckName || deck.name,
+      deckColor: deckColor || deck.color || 'cyan',
+      enhanced: true,
+      created: Date.now()
+    };
+    
+    console.log('Unified ModularDashboard: Creating AudioDeck component:', newComponent);
+    addComponentToLayout(newComponent);
+    
+    console.log('✅ Unified ModularDashboard: AudioDeck widget added successfully:', deck.name);
   }, [dashboardLayout]);
 
   const handleWindowResize = useCallback(() => {
@@ -311,18 +390,18 @@ const EnhancedModularDashboard = () => {
         setSnapToGrid(layout.layout?.snapToGrid ?? true);
         setMagneticDocking(layout.layout?.magneticDocking ?? true);
         setGridSize(layout.layout?.gridSize ?? 10);
-        console.log('Enhanced ModularDashboard: Loaded', layout.layout?.components?.length || 0, 'components');
+        console.log('Unified ModularDashboard: Loaded', layout.layout?.components?.length || 0, 'components');
       } else {
         throw new Error('No valid dashboard layout found');
       }
     } catch (error) {
-      console.error('Enhanced ModularDashboard: Failed to load dashboard:', error);
+      console.error('Unified ModularDashboard: Failed to load dashboard:', error);
       createDefaultDashboard();
     }
   };
 
   const createDefaultDashboard = () => {
-    console.log('Enhanced ModularDashboard: Creating default dashboard...');
+    console.log('Unified ModularDashboard: Creating default dashboard...');
     
     const defaultLayout = {
       version: '2.0',
@@ -397,15 +476,15 @@ const EnhancedModularDashboard = () => {
         setTimeout(() => setSaveIndicator(false), 1500);
       }
       
-      console.log('Enhanced ModularDashboard: Dashboard saved successfully');
+      console.log('Unified ModularDashboard: Dashboard saved successfully');
     } catch (error) {
-      console.error('Enhanced ModularDashboard: Failed to save dashboard:', error);
+      console.error('Unified ModularDashboard: Failed to save dashboard:', error);
     }
   };
 
   const updateConnectionStatus = () => {
-    const obsConnected = enhancedGlobalStateService.isOBSConnected();
-    const midiConnected = enhancedGlobalStateService.isMIDIConnected();
+    const obsConnected = globalStateService.isOBSConnected();
+    const midiConnected = globalStateService.isMIDIConnected();
     
     setConnectionStatus({ obs: obsConnected, midi: midiConnected });
   };
@@ -439,13 +518,18 @@ const EnhancedModularDashboard = () => {
         sources: ['master', 'mic', 'desktop'],
         orientation: 'vertical',
         showMeters: true 
+      }),
+      ...(widgetType === 'audio-deck' && { 
+        deckId: getAvailableAudioDeckId(),
+        orientation: 'vertical',
+        showMeters: true 
       })
     };
 
     addComponentToLayout(newComponent);
     setShowComponentPalette(false);
     
-    console.log('Enhanced ModularDashboard: Added component:', newComponent.type, newComponent.id);
+    console.log('Unified ModularDashboard: Added component:', newComponent.type, newComponent.id);
   };
 
   const addComponentToLayout = (newComponent) => {
@@ -499,7 +583,7 @@ const EnhancedModularDashboard = () => {
     setSelectedComponent(null);
     saveDashboard(false, updatedLayout);
     
-    console.log('Enhanced ModularDashboard: Removed component:', componentId);
+    console.log('Unified ModularDashboard: Removed component:', componentId);
   };
 
   // Layout Utilities
@@ -544,6 +628,23 @@ const EnhancedModularDashboard = () => {
     const decks = configService.getDecks();
     const deckIds = Object.keys(decks);
     return deckIds.length > 0 ? deckIds[0] : 'main';
+  };
+
+  const getAvailableAudioDeckId = () => {
+    const audioDecks = audioDeckService.getAllDecks();
+    if (audioDecks.length > 0) {
+      return audioDecks[0].id;
+    }
+    
+    // Create a default audio deck if none exist
+    const defaultDeck = audioDeckService.createAudioDeck({
+      name: 'Main Audio',
+      description: 'Default audio deck',
+      color: 'cyan',
+      orientation: 'vertical'
+    });
+    
+    return defaultDeck.id;
   };
 
   const snapToGridPosition = (position) => {
@@ -627,7 +728,7 @@ const EnhancedModularDashboard = () => {
     e.stopPropagation();
     
     // Clear any existing context menu
-    enhancedGlobalStateService.clearActiveContextMenu();
+    globalStateService.clearActiveContextMenu();
     
     const menuData = {
       x: e.clientX,
@@ -637,9 +738,9 @@ const EnhancedModularDashboard = () => {
     };
     
     setShowContextMenu(menuData);
-    enhancedGlobalStateService.setActiveContextMenu('dashboardComponent', menuData);
+    globalStateService.setActiveContextMenu('dashboardComponent', menuData);
     
-    console.log('Enhanced ModularDashboard: Component context menu:', component.type);
+    console.log('Unified ModularDashboard: Component context menu:', component.type);
   };
 
   const handleMouseMove = useCallback((e) => {
@@ -724,7 +825,7 @@ const EnhancedModularDashboard = () => {
     const handleClickOutside = (e) => {
       if (showContextMenu) {
         setShowContextMenu(null);
-        enhancedGlobalStateService.clearActiveContextMenu();
+        globalStateService.clearActiveContextMenu();
       }
     };
     
@@ -736,7 +837,7 @@ const EnhancedModularDashboard = () => {
 
   // Update edit mode in global service
   useEffect(() => {
-    enhancedGlobalStateService.setDashboardEditMode(editMode);
+    globalStateService.setDashboardEditMode(editMode);
   }, [editMode]);
 
   // Global keyboard shortcuts
@@ -747,7 +848,7 @@ const EnhancedModularDashboard = () => {
         setShowContextMenu(null);
         setShowComponentPalette(false);
         setDeckEditor({ isOpen: false, deckId: null, buttonKey: null });
-        enhancedGlobalStateService.clearActiveContextMenu();
+        globalStateService.clearActiveContextMenu();
       }
       if (e.key === 'Delete' && selectedComponent && editMode) {
         if (confirm('Remove this widget from the dashboard?')) {
@@ -766,7 +867,7 @@ const EnhancedModularDashboard = () => {
   }, [selectedComponent, editMode]);
 
   const handleDeckEditorSave = (deckId, buttonKey, buttonData) => {
-    console.log('Enhanced ModularDashboard: Deck editor saved button:', deckId, buttonKey, buttonData);
+    console.log('Unified ModularDashboard: Deck editor saved button:', deckId, buttonKey, buttonData);
     
     // Trigger refresh of HotkeyDeckWidgets
     const event = new CustomEvent('deckUpdated', {
@@ -795,8 +896,12 @@ const EnhancedModularDashboard = () => {
         return <MoodSelectorWidget {...commonProps} />;
       case 'audio-mixer':
         return component.enhanced ? 
-          <EnhancedAudioMixerWidget {...commonProps} /> : 
+          <UnifiedAudioMixerWidget {...commonProps} /> : 
           <MoodSelectorWidget {...commonProps} />; // Fallback
+      case 'audio-deck':
+        return component.enhanced ? 
+          <AudioDeckWidget {...commonProps} /> : 
+          <div {...commonProps} className="p-4 bg-gray-800 rounded border border-gray-600 text-white">Audio Deck Loading...</div>;
       case 'hotkey-deck':
         return component.enhanced ? 
           <EnhancedHotkeyDeckWidget {...commonProps} /> : 
@@ -867,7 +972,7 @@ const EnhancedModularDashboard = () => {
                           <h4 className="font-medium text-white">{widget.name}</h4>
                           {widget.enhanced && (
                             <span className="text-xs bg-cyan-500/20 text-cyan-400 px-2 py-1 rounded mt-1 inline-block">
-                              Enhanced
+                              ✨ Unified
                             </span>
                           )}
                         </div>
@@ -899,7 +1004,7 @@ const EnhancedModularDashboard = () => {
           style={{ left: showContextMenu.x, top: showContextMenu.y }}
           onMouseLeave={() => {
             setShowContextMenu(null);
-            enhancedGlobalStateService.clearActiveContextMenu();
+            globalStateService.clearActiveContextMenu();
           }}
         >
           <button
@@ -908,7 +1013,7 @@ const EnhancedModularDashboard = () => {
                 locked: !showContextMenu.component.locked 
               });
               setShowContextMenu(null);
-              enhancedGlobalStateService.clearActiveContextMenu();
+              globalStateService.clearActiveContextMenu();
               saveDashboard(false);
             }}
             className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
@@ -923,7 +1028,7 @@ const EnhancedModularDashboard = () => {
                 visible: !showContextMenu.component.visible 
               });
               setShowContextMenu(null);
-              enhancedGlobalStateService.clearActiveContextMenu();
+              globalStateService.clearActiveContextMenu();
               saveDashboard(false);
             }}
             className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
@@ -938,7 +1043,7 @@ const EnhancedModularDashboard = () => {
             onClick={() => {
               updateComponent(showContextMenu.component.id, { zIndex: getHighestZIndex() + 1 });
               setShowContextMenu(null);
-              enhancedGlobalStateService.clearActiveContextMenu();
+              globalStateService.clearActiveContextMenu();
               saveDashboard(false);
             }}
             className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
@@ -951,7 +1056,7 @@ const EnhancedModularDashboard = () => {
             onClick={() => {
               updateComponent(showContextMenu.component.id, { zIndex: 0 });
               setShowContextMenu(null);
-              enhancedGlobalStateService.clearActiveContextMenu();
+              globalStateService.clearActiveContextMenu();
               saveDashboard(false);
             }}
             className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
@@ -967,7 +1072,7 @@ const EnhancedModularDashboard = () => {
               if (confirm('Remove this widget from the dashboard?')) {
                 removeComponent(showContextMenu.component.id);
                 setShowContextMenu(null);
-                enhancedGlobalStateService.clearActiveContextMenu();
+                globalStateService.clearActiveContextMenu();
                 saveDashboard(false);
               }
             }}
@@ -986,7 +1091,7 @@ const EnhancedModularDashboard = () => {
       <div className="flex items-center justify-center h-64 text-gray-400">
         <div className="text-center">
           <Layout className="w-8 h-8 mx-auto mb-2 animate-spin" />
-          <div>Loading Enhanced Dashboard...</div>
+          <div>Loading Unified Dashboard...</div>
         </div>
       </div>
     );
@@ -994,11 +1099,11 @@ const EnhancedModularDashboard = () => {
 
   return (
     <div className="h-full flex flex-col bg-gray-900">
-      {/* Enhanced Dashboard Header */}
+      {/* Unified Dashboard Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-700 bg-gray-800">
         <div className="flex items-center space-x-3">
           <Layout className="w-5 h-5 text-blue-400" />
-          <h2 className="text-lg font-semibold text-white">Enhanced Dashboard</h2>
+          <h2 className="text-lg font-semibold text-white">Unified Dashboard</h2>
           
           {/* Connection Status */}
           <div className="flex items-center space-x-2">
@@ -1177,7 +1282,7 @@ const EnhancedModularDashboard = () => {
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
               <Layout className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2">Your enhanced dashboard is empty</h3>
+              <h3 className="text-lg font-medium mb-2">Your unified dashboard is empty</h3>
               <p className="text-sm mb-4">Add widgets to create your custom streaming workspace</p>
               <button
                 onClick={() => setShowComponentPalette(true)}
@@ -1191,7 +1296,7 @@ const EnhancedModularDashboard = () => {
         )}
       </div>
 
-      {/* Enhanced Status Bar */}
+      {/* Unified Status Bar */}
       <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-t border-gray-700 text-xs text-gray-400">
         <div className="flex items-center space-x-4">
           <span>Widgets: {dashboardLayout.layout.components.length}</span>
@@ -1209,7 +1314,7 @@ const EnhancedModularDashboard = () => {
           {connectionStatus.midi && (
             <span className="text-purple-400">MIDI</span>
           )}
-          <span>Enhanced Dashboard v2.0</span>
+          <span>Unified Dashboard v2.0</span>
         </div>
       </div>
 

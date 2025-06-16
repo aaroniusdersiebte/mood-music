@@ -28,10 +28,10 @@ class OBSWebSocketService {
       console.log('🔗 OBS WebSocket connected');
       this.connected = true;
       
-      // 🚨 KRITISCHER FIX: Update Global State Service SOFORT!
-      if (window.enhancedGlobalStateService) {
-        console.log('🚨 FIXING: Updating Global State Service with OBS connection');
-        window.enhancedGlobalStateService.updateOBSState({ connected: true });
+      // 🚨 KRITISCHER FIX: Update Unified Global State Service SOFORT!
+      if (window.globalStateService) {
+        console.log('🚨 FIXING: Updating Unified Global State Service with OBS connection');
+        window.globalStateService.updateOBSState({ connected: true });
       }
       
       this.triggerCallback('connected');
@@ -51,10 +51,10 @@ class OBSWebSocketService {
       console.log('❌ OBS WebSocket disconnected');
       this.connected = false;
       
-      // 🚨 KRITISCHER FIX: Update Global State Service beim Disconnect!
-      if (window.enhancedGlobalStateService) {
-        console.log('🚨 FIXING: Updating Global State Service with OBS disconnect');
-        window.enhancedGlobalStateService.updateOBSState({ 
+      // 🚨 KRITISCHER FIX: Update Unified Global State Service beim Disconnect!
+      if (window.globalStateService) {
+        console.log('🚨 FIXING: Updating Unified Global State Service with OBS disconnect');
+        window.globalStateService.updateOBSState({ 
           connected: false,
           sources: [],
           audioLevels: {},
@@ -229,17 +229,17 @@ class OBSWebSocketService {
 
       console.log('🎵 Discovered audio sources:', Array.from(this.audioSources.keys()));
       
-      // 🚨 KRITISCHER FIX: Update Global State Service mit entdeckten Sources!
+      // 🚨 KRITISCHER FIX: Update Unified Global State Service mit entdeckten Sources!
       const sourcesArray = Array.from(this.audioSources.values());
-      if (window.enhancedGlobalStateService) {
-        console.log('🚨 FIXING: Sending', sourcesArray.length, 'audio sources to Global State Service');
-        window.enhancedGlobalStateService.updateOBSState({ 
+      if (window.globalStateService) {
+        console.log('🚨 FIXING: Sending', sourcesArray.length, 'audio sources to Unified Global State Service');
+        window.globalStateService.updateOBSState({ 
           sources: sourcesArray,
           lastSourceDiscovery: Date.now()
         });
         
         // Trigger der sourcesDiscovered callback im GlobalStateService
-        window.enhancedGlobalStateService.triggerCallbacks('sourcesDiscovered', sourcesArray);
+        window.globalStateService.triggerCallbacks('sourcesDiscovered', sourcesArray);
       }
       
       this.triggerCallback('sourcesDiscovered', sourcesArray);
@@ -361,13 +361,13 @@ class OBSWebSocketService {
 
     this.audioLevels.set(inputName, levels);
     
-    // 🚨 KRITISCHER FIX: Forward to ENHANCED GlobalStateService
+    // 🚨 KRITISCHER FIX: Forward to UNIFIED GlobalStateService
     try {
-      if (window.enhancedGlobalStateService) {
-        window.enhancedGlobalStateService.updateAudioLevels(inputName, levels);
+      if (window.globalStateService) {
+        window.globalStateService.updateAudioLevels(inputName, levels);
       }
     } catch (error) {
-      console.error('Failed to forward audio levels to Enhanced GlobalStateService:', error);
+      console.error('Failed to forward audio levels to Unified GlobalStateService:', error);
     }
     
     // Trigger callback for UI
@@ -443,11 +443,11 @@ class OBSWebSocketService {
     }
 
     try {
-      if (window.enhancedGlobalStateService) {
-        window.enhancedGlobalStateService.updateSourceVolume(inputName, inputVolumeDb);
+      if (window.globalStateService) {
+        window.globalStateService.updateSourceVolume(inputName, inputVolumeDb);
       }
     } catch (error) {
-      console.error('Failed to forward volume change to Enhanced GlobalStateService:', error);
+      console.error('Failed to forward volume change to Unified GlobalStateService:', error);
     }
 
     this.triggerCallback('volumeChanged', {
