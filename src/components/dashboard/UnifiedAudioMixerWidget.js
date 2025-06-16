@@ -14,32 +14,31 @@ import {
   Gamepad2,
   Music,
   Bell,
-  MoreVertical,
-  Layout,
   RefreshCw,
   Plus,
-  Minus,
-  Trash2
+  Layout
 } from 'lucide-react';
-import enhancedGlobalStateService from '../../services/enhancedGlobalStateService';
-import configService from '../../services/configService';
+import globalStateService from '../../services/globalStateService';
+import AudioLevelMeter from '../AudioLevelMeter';
 
-const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, performanceMode }) => {
+const UnifiedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, performanceMode }) => {
   const [audioSources, setAudioSources] = useState([]);
   const [audioLevels, setAudioLevels] = useState({});
-  const [visibleSources, setVisibleSources] = useState(component.sources || ['master', 'mic', 'desktop']);
+  const [realTimeAudioLevels, setRealTimeAudioLevels] = useState({});
+  const [visibleSources, setVisibleSources] = useState(component.sources || []);
   const [compactMode, setCompactMode] = useState(component.size?.width < 200);
-  const [showMeters, setShowMeters] = useState(true);
+  const [showMeters, setShowMeters] = useState(component.showMeters !== false);
   const [showSettings, setShowSettings] = useState(false);
   const [orientation, setOrientation] = useState(component.orientation || 'vertical');
   const [sliderSize, setSliderSize] = useState(component.sliderSize || 'medium');
   const [showContextMenu, setShowContextMenu] = useState(null);
-  const [loadingState, setLoadingState] = useState('idle'); // idle, loading, error, success
+  const [loadingState, setLoadingState] = useState('idle');
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
-  const [lastRefresh, setLastRefresh] = useState(Date.now());
-  const [forceUpdate, setForceUpdate] = useState(0); // 🚨 FORCE UPDATE STATE
+  const [lastMIDIMessage, setLastMIDIMessage] = useState(null);
+  const [learningMidi, setLearningMidi] = useState(null);
+  const [sourceMidiMappings, setSourceMidiMappings] = useState({});
+  const [draggedSlider, setDraggedSlider] = useState(null);
   
-  const updateTimeout = useRef(null);
   const widgetRef = useRef(null);
   const refreshInterval = useRef(null);
 
@@ -67,7 +66,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
     alert: 'Alerts'
   };
 
-  // Verfügbare Source-Types für Selection
+  // Available source types for selection
   const availableSourceTypes = [
     { key: 'master', name: 'Master Volume', icon: Speaker },
     { key: 'mic', name: 'Microphone', icon: Mic },
@@ -79,46 +78,42 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
     { key: 'alert', name: 'Alerts', icon: Bell }
   ];
 
-  // 🚨 EMERGENCY: Force State Update
-  const triggerForceUpdate = () => {
-    console.log('🚨 FORCE UPDATE triggered');
-    setForceUpdate(prev => prev + 1);
-  };
-
-  // 🚨 EMERGENCY: Save state to localStorage
+  // Save visible sources to localStorage
   const saveVisibleSourcesToLocalStorage = (sources) => {
     try {
-      localStorage.setItem('audioMixerVisibleSources', JSON.stringify(sources));
-      console.log('💾 Saved visible sources to localStorage:', sources);
+      localStorage.setItem('unifiedAudioMixerVisibleSources', JSON.stringify(sources));
+      console.log('UnifiedAudioMixerWidget: Saved visible sources to localStorage:', sources);
     } catch (error) {
-      console.error('❌ Failed to save to localStorage:', error);
+      console.error('UnifiedAudioMixerWidget: Failed to save to localStorage:', error);
     }
   };
 
-  // 🚨 EMERGENCY: Load state from localStorage
+  // Load visible sources from localStorage
   const loadVisibleSourcesFromLocalStorage = () => {
     try {
-      const stored = localStorage.getItem('audioMixerVisibleSources');
+      const stored = localStorage.getItem('unifiedAudioMixerVisibleSources');
       if (stored) {
         const sources = JSON.parse(stored);
-        console.log('📂 Loaded visible sources from localStorage:', sources);
+        console.log('UnifiedAudioMixerWidget: Loaded visible sources from localStorage:', sources);
         return sources;
       }
     } catch (error) {
-      console.error('❌ Failed to load from localStorage:', error);
+      console.error('UnifiedAudioMixerWidget: Failed to load from localStorage:', error);
     }
-    return ['master', 'mic', 'desktop'];
+    return [];
   };
 
   useEffect(() => {
-    console.log('Enhanced AudioMixerWidget: Initializing...');
+    console.log('UnifiedAudioMixerWidget: Initializing...');
     
-    // 🚨 Load from localStorage first
+    // Load from localStorage first
     const savedSources = loadVisibleSourcesFromLocalStorage();
-    setVisibleSources(savedSources);
+    if (savedSources.length > 0) {
+      setVisibleSources(savedSources);
+    }
     
     // Widget registration
-    enhancedGlobalStateService.registerDashboardWidget(
+    globalStateService.registerDashboardWidget(
       `audio-mixer-${component.id}`, 
       'audio-mixer', 
       { sources: savedSources, orientation, showMeters }
@@ -127,30 +122,14 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
     initializeAudioSources();
     setupEventListeners();
     
-    // 🚨 EMERGENCY EVENT LISTENER: Für Emergency Source Fix
-    const handleEmergencyShowAllSources = (event) => {
-      console.log('🚨 EMERGENCY: Received show all sources event:', event.detail);
-      const { allSourceNames } = event.detail;
-      
-      if (allSourceNames && allSourceNames.length > 0) {
-        console.log('🚨 Setting ALL sources visible from emergency event:', allSourceNames);
-        setVisibleSources(allSourceNames);
-        saveVisibleSourcesToLocalStorage(allSourceNames);
-        triggerForceUpdate();
-      }
-    };
-    
-    window.addEventListener('emergencyShowAllSources', handleEmergencyShowAllSources);
-    
-    // Auto-refresh interval für OBS-Connection
+    // Auto-refresh interval for OBS connection (if not in performance mode)
     if (!performanceMode) {
       refreshInterval.current = setInterval(() => {
         refreshAudioSources();
-      }, 10000); // Alle 10 Sekunden
+      }, 10000); // Every 10 seconds
     }
 
     return () => {
-      window.removeEventListener('emergencyShowAllSources', handleEmergencyShowAllSources);
       cleanup();
     };
   }, []);
@@ -159,124 +138,120 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
     setCompactMode(component.size?.width < 200);
   }, [component.size]);
 
-  // 🚨 Watch for forceUpdate changes
-  useEffect(() => {
-    if (forceUpdate > 0) {
-      console.log('🔄 Force update triggered, refreshing sources...');
-      refreshAudioSources();
-    }
-  }, [forceUpdate]);
-
   const cleanup = () => {
-    enhancedGlobalStateService.unregisterDashboardWidget(`audio-mixer-${component.id}`);
+    globalStateService.unregisterDashboardWidget(`audio-mixer-${component.id}`);
     
     if (refreshInterval.current) {
       clearInterval(refreshInterval.current);
     }
     
-    if (updateTimeout.current) {
-      clearTimeout(updateTimeout.current);
-    }
-    
     // Remove event listeners
-    enhancedGlobalStateService.off('audioLevelsUpdated', handleAudioLevels);
-    enhancedGlobalStateService.off('sourcesDiscovered', handleSourcesUpdated);
-    enhancedGlobalStateService.off('obsStateChanged', handleOBSStateChange);
-    enhancedGlobalStateService.off('sourceVolumeUpdated', handleVolumeUpdated);
+    globalStateService.off('audioLevelsUpdated', handleAudioLevels);
+    globalStateService.off('sourcesDiscovered', handleSourcesUpdated);
+    globalStateService.off('obsStateChanged', handleOBSStateChange);
+    globalStateService.off('sourceVolumeUpdated', handleVolumeUpdated);
+    globalStateService.off('midiStateChanged', handleMIDIStateChange);
+    globalStateService.off('mappingsChanged', handleMappingsChange);
+    globalStateService.off('midiLearningCompleted', handleMIDILearningCompleted);
+    globalStateService.off('midiLearningStopped', handleMIDILearningStopped);
   };
 
   const setupEventListeners = () => {
-    console.log('Enhanced AudioMixerWidget: Setting up event listeners...');
+    console.log('UnifiedAudioMixerWidget: Setting up event listeners...');
     
-    enhancedGlobalStateService.on('audioLevelsUpdated', handleAudioLevels);
-    enhancedGlobalStateService.on('sourcesDiscovered', handleSourcesUpdated);
-    enhancedGlobalStateService.on('obsStateChanged', handleOBSStateChange);
-    enhancedGlobalStateService.on('sourceVolumeUpdated', handleVolumeUpdated);
+    globalStateService.on('audioLevelsUpdated', handleAudioLevels);
+    globalStateService.on('sourcesDiscovered', handleSourcesUpdated);
+    globalStateService.on('obsStateChanged', handleOBSStateChange);
+    globalStateService.on('sourceVolumeUpdated', handleVolumeUpdated);
+    globalStateService.on('midiStateChanged', handleMIDIStateChange);
+    globalStateService.on('mappingsChanged', handleMappingsChange);
+    globalStateService.on('midiLearningCompleted', handleMIDILearningCompleted);
+    globalStateService.on('midiLearningStopped', handleMIDILearningStopped);
   };
 
   const initializeAudioSources = async () => {
     setLoadingState('loading');
     
     try {
-      console.log('Enhanced AudioMixerWidget: Loading initial audio sources...');
+      console.log('UnifiedAudioMixerWidget: Loading initial state...');
       
-      // 🚨 AGGRESSIVE CONNECTION CHECK
-      const obsState = enhancedGlobalStateService.getOBSState();
-      const obsConnected = obsState.connected;
+      // Load initial state from GlobalStateService
+      const obsState = globalStateService.getOBSState();
+      const midiState = globalStateService.getMIDIState();
+      const audioMappings = globalStateService.getAudioSourceMappings();
       
-      console.log('🚨 FIXING AudioMixer: OBS State Check:', { connected: obsConnected, sourcesCount: obsState.sources?.length });
+      setConnectionStatus(obsState.connected ? 'connected' : 'disconnected');
+      setLastMIDIMessage(midiState.lastActivity);
+      setSourceMidiMappings(audioMappings);
       
-      setConnectionStatus(obsConnected ? 'connected' : 'disconnected');
+      console.log('UnifiedAudioMixerWidget: Initial state loaded:', {
+        obsConnected: obsState.connected,
+        sourcesCount: obsState.sources.length,
+        midiConnected: midiState.connected,
+        mappingsCount: Object.keys(audioMappings).length
+      });
       
-      if (obsConnected) {
-        // Get audio sources from enhanced service
-        const sources = enhancedGlobalStateService.getAudioSourcesForMixer();
-        console.log('🚨 FIXING AudioMixer: Loaded', sources.length, 'audio sources from GlobalStateService');
+      if (obsState.connected) {
+        // Get audio sources from service
+        const sources = globalStateService.getAudioSourcesForMixer();
+        console.log('UnifiedAudioMixerWidget: Loaded', sources.length, 'audio sources');
         
         if (sources.length > 0) {
           setAudioSources(sources);
           setLoadingState('success');
-          triggerForceUpdate();
           
-          // 🚨 AUTO-INIT: Wenn keine visibleSources gesetzt sind, alle OBS Sources hinzufügen
-          if (visibleSources.length === 0 || (visibleSources.length <= 3 && visibleSources.every(s => ['master', 'mic', 'desktop'].includes(s)))) {
-            console.log('🚨 AUTO-INIT: Setting all OBS sources as visible');
+          // Auto-initialize visible sources if none are set
+          if (visibleSources.length === 0) {
+            console.log('UnifiedAudioMixerWidget: Auto-initializing visible sources');
             const allSourceNames = sources.map(s => s.name);
             setVisibleSources(allSourceNames);
             saveVisibleSourcesToLocalStorage(allSourceNames);
-            triggerForceUpdate();
           }
         } else {
           // Trigger discovery if no sources found
-          console.log('🚨 FIXING AudioMixer: No sources found, triggering discovery...');
-          await enhancedGlobalStateService.discoverOBSDataWithCaching();
+          console.log('UnifiedAudioMixerWidget: No sources found, triggering discovery...');
+          await globalStateService.discoverOBSDataWithCaching();
           
-          // 🚨 WAIT and CHECK AGAIN after discovery
           setTimeout(() => {
-            const newSources = enhancedGlobalStateService.getAudioSourcesForMixer();
-            console.log('🚨 FIXING AudioMixer: After discovery:', newSources.length, 'sources');
-            
-            // 🚨 DEBUG: Log alle verfügbaren Source-Namen
-            console.log('🔍 DEBUG: Available OBS Source Names:', newSources.map(s => `"${s.name}" (${s.kind})`));
-            console.log('🔍 DEBUG: Current visibleSources:', visibleSources);
+            const newSources = globalStateService.getAudioSourcesForMixer();
+            console.log('UnifiedAudioMixerWidget: After discovery:', newSources.length, 'sources');
             
             if (newSources.length > 0) {
               setAudioSources(newSources);
-            setLoadingState('success');
-            triggerForceUpdate();
-            
-            // 🚨 AUTO-MAPPING: Intelligentes Mapping von OBS Namen zu Standard Namen
-            const autoMappedSources = autoMapOBSSourceNames(newSources);
-            if (autoMappedSources.length > 0) {
-              console.log('🚨 AUTO-MAPPED SOURCES:', autoMappedSources);
-              setVisibleSources(autoMappedSources);
-              saveVisibleSourcesToLocalStorage(autoMappedSources);
-              triggerForceUpdate();
+              setLoadingState('success');
+              
+              // Auto-mapping of OBS source names
+              const autoMappedSources = autoMapOBSSourceNames(newSources);
+              if (autoMappedSources.length > 0) {
+                console.log('UnifiedAudioMixerWidget: Auto-mapped sources:', autoMappedSources);
+                setVisibleSources(autoMappedSources);
+                saveVisibleSourcesToLocalStorage(autoMappedSources);
+              }
+            } else {
+              setLoadingState('idle');
             }
-          } else {
-            setLoadingState('idle');
-          }
           }, 2000);
         }
       } else {
-        console.log('🚨 FIXING AudioMixer: OBS not connected, using default sources');
+        console.log('UnifiedAudioMixerWidget: OBS not connected, using default sources');
         createDefaultAudioSources();
         setLoadingState('idle');
       }
       
       // Load initial audio levels
-      const levels = enhancedGlobalStateService.getAllAudioLevels();
+      const levels = globalStateService.getAllAudioLevels();
       setAudioLevels(levels);
+      setRealTimeAudioLevels(levels);
       
     } catch (error) {
-      console.error('Enhanced AudioMixerWidget: Failed to initialize audio sources:', error);
+      console.error('UnifiedAudioMixerWidget: Failed to initialize audio sources:', error);
       setLoadingState('error');
       createDefaultAudioSources();
     }
   };
 
   const createDefaultAudioSources = () => {
-    console.log('Enhanced AudioMixerWidget: Creating default sources...');
+    console.log('UnifiedAudioMixerWidget: Creating default sources...');
     
     const defaultSources = [
       { name: 'master', volumeDb: -10, muted: false, type: 'master', kind: 'audio_output' },
@@ -289,28 +264,27 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
   };
 
   const refreshAudioSources = async () => {
-    console.log('Enhanced AudioMixerWidget: Refreshing audio sources...');
+    console.log('UnifiedAudioMixerWidget: Refreshing audio sources...');
     setLoadingState('loading');
-    setLastRefresh(Date.now());
     
     try {
-      if (enhancedGlobalStateService.isOBSConnected()) {
+      if (globalStateService.isOBSConnected()) {
         // Force discovery refresh
-        await enhancedGlobalStateService.discoverOBSDataWithCaching();
+        await globalStateService.discoverOBSDataWithCaching();
         
         // Get fresh sources
-        const sources = enhancedGlobalStateService.getAudioSourcesForMixer();
+        const sources = globalStateService.getAudioSourcesForMixer();
         setAudioSources(sources);
         setConnectionStatus('connected');
         setLoadingState('success');
         
-        console.log('Enhanced AudioMixerWidget: Refreshed', sources.length, 'audio sources');
+        console.log('UnifiedAudioMixerWidget: Refreshed', sources.length, 'audio sources');
       } else {
         setConnectionStatus('disconnected');
         setLoadingState('idle');
       }
     } catch (error) {
-      console.error('Enhanced AudioMixerWidget: Failed to refresh sources:', error);
+      console.error('UnifiedAudioMixerWidget: Failed to refresh sources:', error);
       setLoadingState('error');
     }
   };
@@ -322,13 +296,17 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
         ...prev,
         [data.sourceName]: data.levels
       }));
+      
+      if (data.allLevels) {
+        setRealTimeAudioLevels(data.allLevels);
+      }
     }
   }, [performanceMode]);
 
   const handleSourcesUpdated = useCallback((sources) => {
-    console.log('Enhanced AudioMixerWidget: Sources updated:', sources.length);
+    console.log('UnifiedAudioMixerWidget: Sources updated:', sources.length);
     
-    // Filter für Audio-Sources
+    // Filter for audio sources
     const audioSources = sources.filter(source => {
       const kind = source.kind || source.inputKind || '';
       return kind.includes('audio') || 
@@ -338,18 +316,15 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
              kind === 'coreaudio_output_capture';
     });
     
-    console.log('🚨 FIXING AudioMixer: Setting', audioSources.length, 'audio sources and connected state');
+    console.log('UnifiedAudioMixerWidget: Setting', audioSources.length, 'audio sources');
     
     setAudioSources(audioSources);
     setConnectionStatus('connected');
     setLoadingState('success');
-    
-    // 🚨 FORCE UPDATE to ensure UI updates
-    triggerForceUpdate();
   }, []);
 
   const handleOBSStateChange = useCallback((state) => {
-    console.log('🚨 FIXING AudioMixer: OBS State Change:', { connected: state.connected, sourcesCount: state.sources?.length });
+    console.log('UnifiedAudioMixerWidget: OBS State Change:', { connected: state.connected, sourcesCount: state.sources?.length });
     
     setConnectionStatus(state.connected ? 'connected' : 'disconnected');
     
@@ -363,7 +338,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                kind === 'coreaudio_output_capture';
       });
       
-      console.log('🚨 FIXING AudioMixer: Filtered', audioSources.length, 'audio sources from OBS state');
+      console.log('UnifiedAudioMixerWidget: Filtered', audioSources.length, 'audio sources from OBS state');
       setAudioSources(audioSources);
       
       if (audioSources.length > 0) {
@@ -375,181 +350,162 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
       setAudioLevels(state.audioLevels);
     }
     
-    // 🚨 FORCE UPDATE when state changes
-    triggerForceUpdate();
+    if (state.realTimeAudioLevels) {
+      const levelsObj = {};
+      if (state.realTimeAudioLevels instanceof Map) {
+        state.realTimeAudioLevels.forEach((value, key) => {
+          levelsObj[key] = value;
+        });
+      } else {
+        Object.assign(levelsObj, state.realTimeAudioLevels);
+      }
+      setRealTimeAudioLevels(levelsObj);
+    }
   }, []);
 
   const handleVolumeUpdated = useCallback((data) => {
-    console.log('Enhanced AudioMixerWidget: Volume updated:', data.sourceName, data.volumeDb);
+    console.log('UnifiedAudioMixerWidget: Volume updated:', data.sourceName, data.volumeDb);
     
-    // Update local source data
-    setAudioSources(prev => prev.map(source => 
-      source.name === data.sourceName 
-        ? { ...source, volumeDb: data.volumeDb, volume: data.volume }
-        : source
-    ));
+    if (draggedSlider !== data.sourceName) {
+      // Update local source data
+      setAudioSources(prev => prev.map(source => 
+        source.name === data.sourceName 
+          ? { ...source, volumeDb: data.volumeDb, volume: data.volume }
+          : source
+      ));
+    }
+  }, [draggedSlider]);
+
+  const handleMIDIStateChange = useCallback((newState) => {
+    console.log('UnifiedAudioMixerWidget: MIDI state changed:', newState);
+    setLastMIDIMessage(newState.lastActivity);
   }, []);
+
+  const handleMappingsChange = useCallback((data) => {
+    if (data.type === 'audio') {
+      console.log('UnifiedAudioMixerWidget: Audio mappings changed:', data.mappings);
+      setSourceMidiMappings(data.mappings);
+    }
+  }, []);
+
+  const handleMIDILearningCompleted = useCallback((data) => {
+    console.log('UnifiedAudioMixerWidget: MIDI learning completed:', data);
+    if (learningMidi) {
+      const { sourceName, type } = learningMidi;
+      const midiKey = data.message.note.toString();
+      
+      console.log(`UnifiedAudioMixerWidget: Creating ${type} mapping for ${sourceName}: CC${midiKey}`);
+      
+      setSourceMidiMappings(prev => ({
+        ...prev,
+        [sourceName]: {
+          ...prev[sourceName],
+          [type]: midiKey
+        }
+      }));
+      
+      globalStateService.setAudioSourceMapping(sourceName, type, midiKey);
+      
+      if (type === 'volume') {
+        const mapping = {
+          type: 'volume',
+          target: sourceName,
+          min: 0,
+          max: 127
+        };
+        globalStateService.setMIDIMapping(midiKey, mapping, 'UnifiedAudioMixerWidget');
+      } else if (type === 'mute') {
+        const mapping = {
+          type: 'hotkey',
+          action: 'mute',
+          target: sourceName
+        };
+        globalStateService.setMIDIMapping(midiKey, mapping, 'UnifiedAudioMixerWidget');
+      }
+      
+      setLearningMidi(null);
+    }
+  }, [learningMidi]);
+
+  const handleMIDILearningStopped = useCallback(() => {
+    console.log('UnifiedAudioMixerWidget: MIDI learning stopped');
+    setLearningMidi(null);
+  }, []);
+
+  // MIDI Learning Functions
+  const startMidiLearning = (sourceName, type) => {
+    console.log(`UnifiedAudioMixerWidget: Starting MIDI learning for ${sourceName} - ${type}`);
+    setLearningMidi({ sourceName, type });
+    
+    const success = globalStateService.startMIDILearning(`UnifiedAudioMixerWidget_${sourceName}_${type}`);
+    if (!success) {
+      console.error('UnifiedAudioMixerWidget: Failed to start MIDI learning');
+      setLearningMidi(null);
+    }
+  };
+
+  const stopMidiLearning = () => {
+    console.log('UnifiedAudioMixerWidget: Stopping MIDI learning');
+    setLearningMidi(null);
+    globalStateService.stopMIDILearning();
+  };
 
   // Volume Control Methods
   const handleVolumeChange = useCallback(async (sourceName, volumeDb) => {
     try {
-      console.log('Enhanced AudioMixerWidget: Setting volume for', sourceName, 'to', volumeDb, 'dB');
-      await enhancedGlobalStateService.setVolume(sourceName, volumeDb, 'EnhancedAudioMixerWidget');
+      console.log('UnifiedAudioMixerWidget: Setting volume for', sourceName, 'to', volumeDb, 'dB');
+      await globalStateService.setVolume(sourceName, volumeDb, 'UnifiedAudioMixerWidget');
     } catch (error) {
-      console.error('Enhanced AudioMixerWidget: Failed to set volume:', error);
+      console.error('UnifiedAudioMixerWidget: Failed to set volume:', error);
     }
+  }, []);
+
+  const handleSliderStart = useCallback((sourceName) => {
+    setDraggedSlider(sourceName);
+  }, []);
+  
+  const handleSliderEnd = useCallback(() => {
+    setDraggedSlider(null);
   }, []);
 
   const handleMuteToggle = useCallback(async (sourceName) => {
     try {
-      console.log('Enhanced AudioMixerWidget: Toggling mute for', sourceName);
-      await enhancedGlobalStateService.toggleMute(sourceName, 'EnhancedAudioMixerWidget');
+      console.log('UnifiedAudioMixerWidget: Toggling mute for', sourceName);
+      await globalStateService.toggleMute(sourceName, 'UnifiedAudioMixerWidget');
     } catch (error) {
-      console.error('Enhanced AudioMixerWidget: Failed to toggle mute:', error);
+      console.error('UnifiedAudioMixerWidget: Failed to toggle mute:', error);
     }
   }, []);
 
-  // Utility Methods
-  const getVolumeFromDb = (volumeDb) => {
-    if (volumeDb <= -60) return 0;
-    return Math.round(((volumeDb + 60) / 60) * 100);
-  };
-
-  const getDbFromVolume = (volume) => {
-    if (volume <= 0) return -60;
-    return (volume / 100) * 60 - 60;
-  };
-
-  const getVisibleAudioSources = () => {
-    console.log('🔍 getVisibleAudioSources: audioSources:', audioSources.length, 'visibleSources:', visibleSources);
-    
-    // 🚨 IMPROVED FILTERING: Auch echte OBS Namen berücksichtigen
-    const filtered = audioSources.filter(source => {
-      const isVisible = visibleSources.includes(source.name);
-      console.log('🔍 Source:', source.name, 'visible:', isVisible);
-      return isVisible;
-    });
-    
-    console.log('🎯 getVisibleAudioSources result:', filtered.length, 'sources:', filtered.map(s => s.name));
-    return filtered;
-  };
-
-  // 🚨 EMERGENCY: Super Aggressive Source Toggle
+  // Source visibility functions
   const toggleSourceVisibility = (sourceName) => {
-    console.log('🚨 EMERGENCY toggleSourceVisibility called for:', sourceName);
+    console.log('UnifiedAudioMixerWidget: Toggling source visibility:', sourceName);
     
     const newVisible = visibleSources.includes(sourceName)
       ? visibleSources.filter(s => s !== sourceName)
       : [...visibleSources, sourceName];
     
-    console.log('🔄 Visibility change:', { sourceName, wasVisible: visibleSources.includes(sourceName), newVisible });
+    console.log('UnifiedAudioMixerWidget: Visibility change:', { sourceName, wasVisible: visibleSources.includes(sourceName), newVisible });
     
-    // 🚨 MULTIPLE STATE UPDATES
     setVisibleSources(newVisible);
-    
-    // 🚨 SAVE TO LOCALSTORAGE IMMEDIATELY
     saveVisibleSourcesToLocalStorage(newVisible);
     
-    // 🚨 CALL PARENT UPDATE
     if (onUpdate) {
       onUpdate({ sources: newVisible });
     }
     
-    // 🚨 FORCE WIDGET UPDATE
-    triggerForceUpdate();
-    
-    console.log('✅ Enhanced AudioMixerWidget: Source visibility toggled:', sourceName, 'visible:', !visibleSources.includes(sourceName));
+    console.log('UnifiedAudioMixerWidget: Source visibility toggled:', sourceName, 'visible:', !visibleSources.includes(sourceName));
   };
 
-  // 🚨 AUTO-MAPPING FUNCTION: Intelligente Zuordnung von OBS Namen zu Standard Namen
-  const autoMapOBSSourceNames = (obsSourcesArray) => {
-    console.log('🤖 AUTO-MAPPING: Starting intelligent source name mapping...');
-    
-    const mappings = [];
-    
-    obsSourcesArray.forEach(source => {
-      const sourceName = source.name.toLowerCase();
-      const sourceKind = source.kind || '';
-      
-      console.log('🔍 Analyzing source:', source.name, 'kind:', sourceKind);
-      
-      // Desktop Audio detection
-      if (sourceName.includes('desktop') || 
-          sourceName.includes('speaker') || 
-          sourceName.includes('system') ||
-          sourceName.includes('computer') ||
-          sourceKind.includes('wasapi_output') ||
-          sourceKind.includes('coreaudio_output')) {
-        mappings.push(source.name);
-        console.log('✅ AUTO-MAPPED: Desktop Audio ->', source.name);
-      }
-      // Microphone detection
-      else if (sourceName.includes('mic') || 
-               sourceName.includes('microphone') ||
-               sourceKind.includes('wasapi_input') ||
-               sourceKind.includes('coreaudio_input') ||
-               sourceKind.includes('dshow_input')) {
-        mappings.push(source.name);
-        console.log('✅ AUTO-MAPPED: Microphone ->', source.name);
-      }
-      // Game Audio detection
-      else if (sourceName.includes('game') || 
-               sourceName.includes('application') ||
-               sourceName.includes('app')) {
-        mappings.push(source.name);
-        console.log('✅ AUTO-MAPPED: Game Audio ->', source.name);
-      }
-      // Music/Media detection
-      else if (sourceName.includes('music') || 
-               sourceName.includes('media') ||
-               sourceName.includes('spotify') ||
-               sourceName.includes('vlc')) {
-        mappings.push(source.name);
-        console.log('✅ AUTO-MAPPED: Music ->', source.name);
-      }
-      // Browser detection
-      else if (sourceName.includes('browser') || 
-               sourceName.includes('chrome') ||
-               sourceName.includes('firefox') ||
-               sourceName.includes('edge')) {
-        mappings.push(source.name);
-        console.log('✅ AUTO-MAPPED: Browser ->', source.name);
-      }
-      // Discord/Communication detection
-      else if (sourceName.includes('discord') || 
-               sourceName.includes('teamspeak') ||
-               sourceName.includes('skype') ||
-               sourceName.includes('zoom')) {
-        mappings.push(source.name);
-        console.log('✅ AUTO-MAPPED: Communication ->', source.name);
-      }
-      // Alles andere auch hinzufügen (wir wollen alle Sources sehen)
-      else {
-        mappings.push(source.name);
-        console.log('🔄 AUTO-MAPPED: Other Audio ->', source.name);
-      }
-    });
-    
-    console.log('🎉 AUTO-MAPPING COMPLETE:', mappings.length, 'sources mapped');
-    return mappings;
-  };
-
-  // 🚨 EMERGENCY: Super Aggressive Add Custom Source
   const addCustomSource = (sourceType) => {
-    console.log('🚨 EMERGENCY addCustomSource called for:', sourceType);
+    console.log('UnifiedAudioMixerWidget: Adding custom source:', sourceType);
     
     if (!visibleSources.includes(sourceType)) {
       const newVisible = [...visibleSources, sourceType];
       
-      console.log('🔄 Adding custom source:', { sourceType, newVisible });
-      
-      // 🚨 MULTIPLE STATE UPDATES
       setVisibleSources(newVisible);
-      
-      // 🚨 SAVE TO LOCALSTORAGE IMMEDIATELY
       saveVisibleSourcesToLocalStorage(newVisible);
       
-      // 🚨 CALL PARENT UPDATE
       if (onUpdate) {
         onUpdate({ sources: newVisible });
       }
@@ -567,12 +523,86 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
         setAudioSources(prev => [...prev, newSource]);
       }
       
-      // 🚨 FORCE WIDGET UPDATE
-      triggerForceUpdate();
+      console.log('UnifiedAudioMixerWidget: Added custom source:', sourceType);
+    }
+  };
+
+  // Intelligent OBS source name mapping
+  const autoMapOBSSourceNames = (obsSourcesArray) => {
+    console.log('UnifiedAudioMixerWidget: Starting intelligent source name mapping...');
+    
+    const mappings = [];
+    
+    obsSourcesArray.forEach(source => {
+      const sourceName = source.name.toLowerCase();
+      const sourceKind = source.kind || '';
       
-      console.log('✅ Enhanced AudioMixerWidget: Added custom source:', sourceType);
+      console.log('UnifiedAudioMixerWidget: Analyzing source:', source.name, 'kind:', sourceKind);
+      
+      // Desktop Audio detection
+      if (sourceName.includes('desktop') || 
+          sourceName.includes('speaker') || 
+          sourceName.includes('system') ||
+          sourceName.includes('computer') ||
+          sourceKind.includes('wasapi_output') ||
+          sourceKind.includes('coreaudio_output')) {
+        mappings.push(source.name);
+        console.log('UnifiedAudioMixerWidget: Auto-mapped Desktop Audio ->', source.name);
+      }
+      // Microphone detection
+      else if (sourceName.includes('mic') || 
+               sourceName.includes('microphone') ||
+               sourceKind.includes('wasapi_input') ||
+               sourceKind.includes('coreaudio_input') ||
+               sourceKind.includes('dshow_input')) {
+        mappings.push(source.name);
+        console.log('UnifiedAudioMixerWidget: Auto-mapped Microphone ->', source.name);
+      }
+      // Everything else (we want to see all sources)
+      else {
+        mappings.push(source.name);
+        console.log('UnifiedAudioMixerWidget: Auto-mapped Other Audio ->', source.name);
+      }
+    });
+    
+    console.log('UnifiedAudioMixerWidget: Auto-mapping complete:', mappings.length, 'sources mapped');
+    return mappings;
+  };
+
+  // Utility methods
+  const getVolumeFromDb = (volumeDb) => {
+    if (volumeDb <= -60) return 0;
+    return Math.round(((volumeDb + 60) / 60) * 100);
+  };
+
+  const getDbFromVolume = (volume) => {
+    if (volume <= 0) return -60;
+    return (volume / 100) * 60 - 60;
+  };
+
+  const getVisibleAudioSources = () => {
+    const filtered = audioSources.filter(source => {
+      return visibleSources.includes(source.name);
+    });
+    
+    console.log('UnifiedAudioMixerWidget: Visible audio sources:', filtered.length, 'of', audioSources.length);
+    return filtered;
+  };
+
+  const getSourceIcon = (source) => {
+    // Try to get icon from sourceIcons mapping first
+    if (sourceIcons[source.name]) {
+      return sourceIcons[source.name];
+    }
+    
+    // Fallback to kind-based detection
+    const sourceKind = source.kind || source.inputKind || '';
+    if (sourceKind.includes('input') || sourceKind.includes('mic')) {
+      return Mic;
+    } else if (sourceKind.includes('output') || sourceKind.includes('desktop')) {
+      return Monitor;
     } else {
-      console.log('⚠️ Source already visible:', sourceType);
+      return Volume2;
     }
   };
 
@@ -582,7 +612,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
     e.stopPropagation();
     
     // Clear any existing dashboard context menu
-    enhancedGlobalStateService.clearActiveContextMenu();
+    globalStateService.clearActiveContextMenu();
     
     const menuData = {
       x: e.clientX,
@@ -594,11 +624,11 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
     setShowContextMenu(menuData);
     
     if (source) {
-      console.log('Enhanced AudioMixerWidget: Source context menu:', source.name);
-      enhancedGlobalStateService.setActiveContextMenu('audioMixerSource', menuData);
+      console.log('UnifiedAudioMixerWidget: Source context menu:', source.name);
+      globalStateService.setActiveContextMenu('audioMixerSource', menuData);
     } else {
-      console.log('Enhanced AudioMixerWidget: Widget context menu');
-      enhancedGlobalStateService.setActiveContextMenu('audioMixerWidget', menuData);
+      console.log('UnifiedAudioMixerWidget: Widget context menu');
+      globalStateService.setActiveContextMenu('audioMixerWidget', menuData);
     }
   };
 
@@ -608,7 +638,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
       if (widgetRef.current && !widgetRef.current.contains(event.target)) {
         setShowSettings(false);
         setShowContextMenu(null);
-        enhancedGlobalStateService.clearActiveContextMenu();
+        globalStateService.clearActiveContextMenu();
       }
     };
 
@@ -622,8 +652,28 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
   const renderVolumeSlider = (source) => {
     const volumeDb = source.volumeDb || -60;
     const volume = getVolumeFromDb(volumeDb);
-    const levels = audioLevels[source.name];
-    const Icon = sourceIcons[source.name] || Volume2;
+    const levels = realTimeAudioLevels[source.name];
+    const Icon = getSourceIcon(source);
+    const isLearningVolume = learningMidi?.sourceName === source.name && learningMidi?.type === 'volume';
+    const isLearningMute = learningMidi?.sourceName === source.name && learningMidi?.type === 'mute';
+    const volumeMapping = sourceMidiMappings[source.name]?.volume;
+    const muteMapping = sourceMidiMappings[source.name]?.mute;
+
+    const removeMidiMapping = (type) => {
+      const mapping = sourceMidiMappings[source.name]?.[type];
+      if (mapping) {
+        console.log(`UnifiedAudioMixerWidget: Removing MIDI mapping for ${source.name} ${type}: ${mapping}`);
+        globalStateService.removeMIDIMapping(mapping);
+        
+        setSourceMidiMappings(prev => ({
+          ...prev,
+          [source.name]: {
+            ...prev[source.name],
+            [type]: undefined
+          }
+        }));
+      }
+    };
 
     return (
       <div 
@@ -640,6 +690,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
             </span>
           </div>
           
+          {/* Mute Button */}
           <button
             onClick={() => handleMuteToggle(source.name)}
             className={`${compactMode ? 'p-1' : 'p-1.5'} rounded transition-colors ${
@@ -652,62 +703,111 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
           </button>
         </div>
 
-        {/* Volume Slider */}
-        <div className="space-y-2">
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={volume}
-            onChange={(e) => {
-              const newVolume = parseInt(e.target.value);
-              const newVolumeDb = getDbFromVolume(newVolume);
-              handleVolumeChange(source.name, newVolumeDb);
-            }}
-            className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
-            style={{
-              background: `linear-gradient(to right, #10b981 0%, #10b981 ${volume}%, #4b5563 ${volume}%, #4b5563 100%)`
-            }}
-          />
-          
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-400">{volumeDb.toFixed(0)}dB</span>
-            <span className="text-gray-400">{volume}%</span>
-          </div>
-        </div>
-
-        {/* Audio Level Meters */}
-        {showMeters && levels && levels.isReal && !performanceMode && (
-          <div className="mt-2 space-y-1">
-            <div className="flex items-center space-x-1">
-              <span className="text-xs text-gray-500 w-4">L</span>
-              <div className="flex-1 h-1 bg-gray-600 rounded overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-400 transition-all duration-100"
-                  style={{ 
-                    width: `${Math.max(0, Math.min(100, ((levels.left + 60) / 60) * 100))}%` 
-                  }}
-                />
-              </div>
-            </div>
-            <div className="flex items-center space-x-1">
-              <span className="text-xs text-gray-500 w-4">R</span>
-              <div className="flex-1 h-1 bg-gray-600 rounded overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-400 transition-all duration-100"
-                  style={{ 
-                    width: `${Math.max(0, Math.min(100, ((levels.right + 60) / 60) * 100))}%` 
-                  }}
-                />
-              </div>
-            </div>
+        {/* MIDI Learning Controls for Mute */}
+        {!compactMode && (
+          <div className="flex items-center space-x-1 mb-2">
+            <button
+              onClick={() => isLearningMute ? stopMidiLearning() : startMidiLearning(source.name, 'mute')}
+              className={`px-1 py-0.5 text-xs rounded transition-colors ${
+                isLearningMute 
+                  ? 'bg-red-500 text-white animate-pulse' 
+                  : muteMapping
+                    ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
+                    : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
+              }`}
+              title={isLearningMute ? 'Cancel MIDI learning' : 'Learn MIDI for mute'}
+            >
+              {isLearningMute ? 'Cancel' : muteMapping ? `CC${muteMapping}` : 'Learn'}
+            </button>
+            
+            {muteMapping && !isLearningMute && (
+              <button
+                onClick={() => removeMidiMapping('mute')}
+                className="px-1 py-0.5 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                title="Remove MIDI mapping"
+              >
+                ×
+              </button>
+            )}
           </div>
         )}
 
-        {/* Peak Indicators */}
-        {levels && levels.left > -3 && (
-          <div className="mt-1 text-xs text-red-400 animate-pulse">
-            PEAK
+        {/* Volume Slider */}
+        <div className="space-y-2">
+          {/* MIDI Learning Controls for Volume */}
+          {!compactMode && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-400">{volumeDb.toFixed(1)}dB</span>
+              <div className="flex items-center space-x-1">
+                <button
+                  onClick={() => isLearningVolume ? stopMidiLearning() : startMidiLearning(source.name, 'volume')}
+                  className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                    isLearningVolume 
+                      ? 'bg-red-500 text-white animate-pulse' 
+                      : volumeMapping
+                        ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                        : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
+                  }`}
+                  title={isLearningVolume ? 'Cancel MIDI learning' : 'Learn MIDI for volume'}
+                >
+                  {isLearningVolume ? 'Cancel' : volumeMapping ? `CC${volumeMapping}` : 'Learn Vol'}
+                </button>
+                
+                {volumeMapping && !isLearningVolume && (
+                  <button
+                    onClick={() => removeMidiMapping('volume')}
+                    className="px-1 py-0.5 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                    title="Remove MIDI mapping"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          
+          <input
+            type="range"
+            min="-60"
+            max="0"
+            step="0.1"
+            value={volumeDb}
+            onChange={(e) => {
+              const newVolumeDb = parseFloat(e.target.value);
+              handleVolumeChange(source.name, newVolumeDb);
+            }}
+            onMouseDown={() => handleSliderStart(source.name)}
+            onMouseUp={handleSliderEnd}
+            onTouchStart={() => handleSliderStart(source.name)}
+            onTouchEnd={handleSliderEnd}
+            className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
+          />
+          
+          {!compactMode && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-400">{volume}%</span>
+            </div>
+          )}
+        </div>
+
+        {/* Audio Level Meters */}
+        {showMeters && levels && !performanceMode && (
+          <div className="mt-2">
+            <AudioLevelMeter
+              inputName={source.name}
+              audioLevel={levels}
+              isActive={connectionStatus === 'connected'}
+              width={compactMode ? 100 : 150}
+              height={compactMode ? 16 : 24}
+              style="horizontal"
+            />
+          </div>
+        )}
+
+        {/* MIDI Learning Indicator */}
+        {(learningMidi?.sourceName === source.name) && (
+          <div className="mt-1 px-2 py-1 bg-blue-500 text-white text-xs rounded animate-pulse text-center">
+            Learning MIDI...
           </div>
         )}
       </div>
@@ -764,58 +864,6 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
           )}
         </div>
         
-        {/* 🚨 EMERGENCY CONTROLS */}
-        <div className="p-2 bg-red-500/10 border border-red-500/30 rounded">
-          <div className="text-xs font-medium text-red-400 mb-2">🚨 Emergency Controls</div>
-          <div className="space-y-1">
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('🚨 Emergency: Force refresh sources');
-                refreshAudioSources();
-                triggerForceUpdate();
-              }}
-              className="w-full px-2 py-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded text-xs"
-            >
-              Force Refresh Sources
-            </button>
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('🚨 Emergency: Show ALL OBS sources');
-                const allSourceNames = audioSources.map(s => s.name);
-                if (allSourceNames.length > 0) {
-                  console.log('🚨 Setting ALL sources visible:', allSourceNames);
-                  setVisibleSources(allSourceNames);
-                  saveVisibleSourcesToLocalStorage(allSourceNames);
-                  triggerForceUpdate();
-                } else {
-                  console.log('🚨 No sources found to show');
-                }
-              }}
-              className="w-full px-2 py-1 bg-green-500/20 text-green-400 hover:bg-green-500/30 rounded text-xs"
-            >
-              Show ALL OBS Sources
-            </button>
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('🚨 Emergency: Reset visible sources');
-                const defaultSources = ['master', 'mic', 'desktop'];
-                setVisibleSources(defaultSources);
-                saveVisibleSourcesToLocalStorage(defaultSources);
-                triggerForceUpdate();
-              }}
-              className="w-full px-2 py-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded text-xs"
-            >
-              Reset to Defaults
-            </button>
-          </div>
-        </div>
-        
         {/* OBS Sources */}
         {audioSources.length > 0 && (
           <div>
@@ -828,21 +876,9 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                 return (
                   <button
                     key={source.name}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      console.log('🚨 EMERGENCY: MouseDown on source:', source.name);
-                    }}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      console.log('🚨 EMERGENCY: Click on source:', source.name);
-                      toggleSourceVisibility(source.name);
-                    }}
-                    onDoubleClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      console.log('🚨 EMERGENCY: Double-click on source:', source.name);
                       toggleSourceVisibility(source.name);
                     }}
                     className={`p-2 rounded border text-xs flex items-center justify-between transition-colors cursor-pointer ${
@@ -850,7 +886,6 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                         ? 'border-green-500 bg-green-500/20 text-green-400'
                         : 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600'
                     }`}
-                    style={{ userSelect: 'none' }}
                   >
                     <span className="truncate">{source.name}</span>
                     {isVisible && <span className="text-green-400 ml-2">✓</span>}
@@ -874,21 +909,9 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
               return (
                 <button
                   key={sourceType.key}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('🚨 EMERGENCY: MouseDown on virtual source:', sourceType.key);
-                  }}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log('🚨 EMERGENCY: Click on virtual source:', sourceType.key);
-                    addCustomSource(sourceType.key);
-                  }}
-                  onDoubleClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('🚨 EMERGENCY: Double-click on virtual source:', sourceType.key);
                     addCustomSource(sourceType.key);
                   }}
                   className={`p-2 rounded border text-xs flex items-center space-x-2 transition-colors cursor-pointer ${
@@ -896,7 +919,6 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                       ? 'border-green-500 bg-green-500/20 text-green-400'
                       : 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600'
                   }`}
-                  style={{ userSelect: 'none' }}
                 >
                   <Icon className="w-3 h-3" />
                   <span className="flex-1 truncate">{sourceType.name}</span>
@@ -1023,7 +1045,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
           style={{ left: showContextMenu.x, top: showContextMenu.y }}
           onMouseLeave={() => {
             setShowContextMenu(null);
-            enhancedGlobalStateService.clearActiveContextMenu();
+            globalStateService.clearActiveContextMenu();
           }}
         >
           {showContextMenu.source ? (
@@ -1033,7 +1055,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                 onClick={() => {
                   toggleSourceVisibility(showContextMenu.source.name);
                   setShowContextMenu(null);
-                  enhancedGlobalStateService.clearActiveContextMenu();
+                  globalStateService.clearActiveContextMenu();
                 }}
                 className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
               >
@@ -1045,7 +1067,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                 onClick={() => {
                   handleMuteToggle(showContextMenu.source.name);
                   setShowContextMenu(null);
-                  enhancedGlobalStateService.clearActiveContextMenu();
+                  globalStateService.clearActiveContextMenu();
                 }}
                 className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
               >
@@ -1059,7 +1081,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                 onClick={() => {
                   handleVolumeChange(showContextMenu.source.name, 0);
                   setShowContextMenu(null);
-                  enhancedGlobalStateService.clearActiveContextMenu();
+                  globalStateService.clearActiveContextMenu();
                 }}
                 className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
               >
@@ -1074,7 +1096,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                 onClick={() => {
                   setShowSettings(true);
                   setShowContextMenu(null);
-                  enhancedGlobalStateService.clearActiveContextMenu();
+                  globalStateService.clearActiveContextMenu();
                 }}
                 className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
               >
@@ -1087,7 +1109,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                   setShowMeters(!showMeters);
                   onUpdate({ showMeters: !showMeters });
                   setShowContextMenu(null);
-                  enhancedGlobalStateService.clearActiveContextMenu();
+                  globalStateService.clearActiveContextMenu();
                 }}
                 className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
               >
@@ -1101,7 +1123,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                 onClick={() => {
                   refreshAudioSources();
                   setShowContextMenu(null);
-                  enhancedGlobalStateService.clearActiveContextMenu();
+                  globalStateService.clearActiveContextMenu();
                 }}
                 className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
               >
@@ -1114,7 +1136,7 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                   setOrientation(orientation === 'vertical' ? 'horizontal' : 'vertical');
                   onUpdate({ orientation: orientation === 'vertical' ? 'horizontal' : 'vertical' });
                   setShowContextMenu(null);
-                  enhancedGlobalStateService.clearActiveContextMenu();
+                  globalStateService.clearActiveContextMenu();
                 }}
                 className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
               >
@@ -1156,13 +1178,6 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
               <span className="text-xs">Loading...</span>
             </div>
           )}
-          
-          {/* 🚨 EMERGENCY INDICATOR */}
-          {forceUpdate > 0 && (
-            <div className="flex items-center space-x-1 text-red-400">
-              <span className="text-xs">🚨 v{forceUpdate}</span>
-            </div>
-          )}
         </div>
         
         <div className="flex items-center space-x-1">
@@ -1202,6 +1217,22 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
         </div>
       </div>
 
+      {/* MIDI Activity Monitor */}
+      {lastMIDIMessage && !compactMode && (
+        <div className="mx-3 mt-2 p-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-blue-400 font-medium">MIDI Activity</span>
+            <span className="text-xs text-gray-400">
+              {new Date(lastMIDIMessage.timestamp).toLocaleTimeString()}
+            </span>
+          </div>
+          <div className="text-xs text-blue-300 mt-1">
+            {lastMIDIMessage.type} - CC/Note: {lastMIDIMessage.note} - Value: {lastMIDIMessage.velocity}
+            {lastMIDIMessage.mock && ' (Keyboard Simulation)'}
+          </div>
+        </div>
+      )}
+
       {/* Widget Content */}
       <div className="flex-1 overflow-y-auto p-2">
         {visibleAudioSources.length === 0 ? (
@@ -1216,24 +1247,12 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
                 }
               </div>
               <button
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  console.log('🚨 EMERGENCY: Opening settings for audio sources');
-                  setShowSettings(true);
-                }}
-                onDoubleClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  console.log('🚨 EMERGENCY: Double-click opening settings for audio sources');
                   setShowSettings(true);
                 }}
                 className="mt-2 px-3 py-1 bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded text-xs transition-colors flex items-center space-x-1 cursor-pointer"
-                style={{ userSelect: 'none' }}
               >
                 <Plus className="w-3 h-3" />
                 <span>Add Audio Sources</span>
@@ -1265,24 +1284,8 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
             {performanceMode && <span className="text-yellow-400">⚡ Performance</span>}
             <span className="text-gray-400">{visibleAudioSources.length} visible</span>
             {loadingState === 'error' && <span className="text-red-400">⚠️ Error</span>}
-            {/* 🚨 EMERGENCY DEBUG INFO */}
-            <span className="text-red-400 text-xs">🚨 v{forceUpdate}</span>
-            <span className="text-blue-400 text-xs">{audioSources.length}total</span>
           </div>
         </div>
-        
-        {/* 🚨 DEBUG BAR: Zeige Source Namen */}
-        {audioSources.length > 0 && (
-          <div className="mt-1 text-xs text-gray-500 truncate">
-            🎵 Available: {audioSources.map(s => s.name).join(', ')}
-          </div>
-        )}
-        
-        {visibleSources.length > 0 && (
-          <div className="mt-1 text-xs text-gray-400 truncate">
-            👀 Visible: {visibleSources.join(', ')}
-          </div>
-        )}
       </div>
 
       {/* Settings Panel */}
@@ -1290,8 +1293,30 @@ const EnhancedAudioMixerWidget = ({ component, editMode, onUpdate, onRemove, per
       
       {/* Context Menu */}
       {renderContextMenu()}
+
+      {/* Custom Styles */}
+      <style jsx>{`
+        .slider::-webkit-slider-thumb {
+          appearance: none;
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background: #10b981;
+          cursor: pointer;
+          border: 2px solid #064e3b;
+        }
+        
+        .slider::-moz-range-thumb {
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background: #10b981;
+          cursor: pointer;
+          border: 2px solid #064e3b;
+        }
+      `}</style>
     </div>
   );
 };
 
-export default EnhancedAudioMixerWidget;
+export default UnifiedAudioMixerWidget;

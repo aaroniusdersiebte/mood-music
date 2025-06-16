@@ -1,6 +1,10 @@
 // Enhanced Configuration Service - File-based storage for Electron with EXE support
 // Prioritizes file-based storage and uses localStorage only as emergency fallback
-import { join } from 'path';
+
+// Safe path join function for browser/Electron compatibility
+function join(...paths) {
+  return paths.filter(p => p).join('/').replace(/\/+/g, '/').replace(/\/$/, '');
+}
 
 class ConfigService {
   constructor() {
@@ -10,6 +14,7 @@ class ConfigService {
       decks: 'hotkey-decks.json',
       dashboard: 'dashboard-layout.json',
       audioMixer: 'audio-mixer-config.json',
+      audioDecks: 'audio-decks-config.json',
       moods: 'mood-shortcuts.json',
       appSettings: 'app-settings.json'
     };
@@ -152,9 +157,21 @@ class ConfigService {
               id: 'audio-mixer',
               type: 'audio-mixer',
               position: { x: 340, y: 20 },
-              size: { width: 250, height: 400 },
+              size: { width: 280, height: 400 },
               visible: true,
-              sources: ['master', 'mic', 'desktop', 'game']
+              sources: ['master', 'mic', 'desktop', 'game'],
+              enhanced: true
+            },
+            {
+              id: 'audio-deck-main',
+              type: 'audio-deck',
+              position: { x: 640, y: 20 },
+              size: { width: 280, height: 400 },
+              visible: true,
+              deckId: 'main-output',
+              orientation: 'vertical',
+              showMeters: true,
+              enhanced: true
             },
             {
               id: 'main-deck',
@@ -175,6 +192,58 @@ class ConfigService {
         compactMode: false,
         showMeters: true,
         meterUpdateRate: 60
+      },
+      audioDecks: {
+        decks: {
+          'main-output': {
+            id: 'main-output',
+            name: 'Main Output',
+            description: 'Primary audio output sources',
+            color: 'green',
+            icon: 'speaker',
+            orientation: 'vertical',
+            showMeters: true,
+            sources: [],
+            position: { x: 0, y: 0 },
+            size: { width: 280, height: 400 },
+            isDefault: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          },
+          'microphones': {
+            id: 'microphones',
+            name: 'Microphones',
+            description: 'All microphone inputs',
+            color: 'blue',
+            icon: 'mic',
+            orientation: 'vertical',
+            showMeters: true,
+            sources: [],
+            position: { x: 300, y: 0 },
+            size: { width: 280, height: 300 },
+            isDefault: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          },
+          'media-sources': {
+            id: 'media-sources',
+            name: 'Media Sources',
+            description: 'Music, game audio, and media',
+            color: 'purple',
+            icon: 'music',
+            orientation: 'vertical',
+            showMeters: true,
+            sources: [],
+            position: { x: 600, y: 0 },
+            size: { width: 280, height: 350 },
+            isDefault: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          }
+        },
+        sourceMappings: {},
+        version: '1.0',
+        lastUpdated: Date.now()
       },
       moods: {
         quickAccess: [],
@@ -372,6 +441,10 @@ class ConfigService {
     return this.getConfig('audioMixer');
   }
 
+  getAudioDecksConfig() {
+    return this.getConfig('audioDecks');
+  }
+
   getMoodShortcuts() {
     return this.getConfig('moods');
   }
@@ -391,6 +464,10 @@ class ConfigService {
 
   async setAudioMixerConfig(config) {
     await this.saveConfig('audioMixer', config);
+  }
+
+  async setAudioDecksConfig(config) {
+    await this.saveConfig('audioDecks', config);
   }
 
   async setMoodShortcuts(shortcuts) {

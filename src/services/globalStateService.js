@@ -1,4 +1,4 @@
-// Global State Service - Zentrale Verwaltung aller Services und States
+// Unified Global State Service - Central management for all services and states
 class GlobalStateService {
   constructor() {
     this.states = {
@@ -6,7 +6,10 @@ class GlobalStateService {
         connected: false,
         sources: [],
         audioLevels: {},
-        realTimeAudioLevels: new Map() // For real-time audio visualization
+        realTimeAudioLevels: new Map(), // For real-time audio visualization
+        scenes: [],
+        lastSourceDiscovery: 0,
+        lastSceneDiscovery: 0
       },
       midi: {
         connected: false,
@@ -16,8 +19,14 @@ class GlobalStateService {
         learningTarget: null
       },
       mappings: {
-        midi: new Map(), // Zentrale MIDI Mappings
-        audio: {} // Audio Mixer spezifische Zuweisungen
+        midi: new Map(), // Central MIDI Mappings
+        audio: {}, // Audio Mixer specific assignments
+        hotkeys: new Map() // Dashboard-specific Hotkeys
+      },
+      dashboard: {
+        widgets: new Map(),
+        activeContextMenu: null,
+        editMode: false
       }
     };
     
@@ -26,66 +35,268 @@ class GlobalStateService {
       obs: null,
       midi: null
     };
-    this.hiddenSources = new Set(); // Für Performance-Optimierung
+    this.hiddenSources = new Set(); // For performance optimization
+    this.cacheTTL = 30000; // 30 seconds cache for OBS data
+    this.audioLevelThrottle = new Map(); // Performance optimization for audio levels
     
-    console.log('GlobalStateService: Initialized');
+    console.log('Unified GlobalStateService: Initialized with dashboard support');
   }
 
-  // Service Registration
+  // ===== SERVICE REGISTRATION =====
   registerService(name, service) {
     this.services[name] = service;
-    console.log(`GlobalStateService: Registered service: ${name}`);
+    console.log(`Unified GlobalStateService: Registered service: ${name}`);
     
     // Special handling for MIDI service registration
     if (name === 'midi' && service) {
       this.syncMIDIMappingsToService();
     }
+    
+    // Special handling for OBS service registration
+    if (name === 'obs' && service) {
+      this.setupOBSIntegration(service);
+    }
   }
 
-  // Sync MIDI mappings to the MIDI service
-  syncMIDIMappingsToService() {
-    if (!this.services.midi) return;
-    
-    console.log('GlobalStateService: Syncing MIDI mappings to service');
-    
-    // Apply all current mappings to the MIDI service
-    this.states.mappings.midi.forEach((mapping, key) => {
-      try {
-        // Remove the 'source' property before passing to MIDI service
-        const { source, ...cleanMapping } = mapping;
-        this.services.midi.setMapping(key, cleanMapping);
-        console.log(`GlobalStateService: Synced mapping ${key} to MIDI service`);
-      } catch (error) {
-        console.error(`GlobalStateService: Failed to sync mapping ${key}:`, error);
-      }
+  setupOBSIntegration(obsService) {
+    // Enhanced OBS integration with caching
+    obsService.onConnected(() => {
+      console.log('Unified GlobalStateService: OBS connected, starting discovery...');
+      this.discoverOBSDataWithCaching();
     });
+
+    obsService.onSourcesDiscovered((sources) => {
+      console.log('Unified GlobalStateService: OBS sources discovered:', sources.length);
+      this.updateOBSState({ 
+        sources: sources, 
+        lastSourceDiscovery: Date.now() 
+      });
+      this.triggerCallbacks('sourcesDiscovered', sources);
+    });
+
+    obsService.onAudioLevels((data) => {
+      this.handleThrottledAudioLevels(data);
+    });
+  }
+
+  async discoverOBSDataWithCaching() {
+    const now = Date.now();
+    const cacheValid = (now - this.states.obs.lastSourceDiscovery) < this.cacheTTL;
+    
+    if (cacheValid && this.states.obs.sources.length > 0) {
+      console.log('Unified GlobalStateService: Using cached OBS data');
+      return;
+    }
+
+    try {
+      if (this.services.obs && this.services.obs.isConnected()) {
+        console.log('Unified GlobalStateService: Discovering fresh OBS data...');
+        
+        // Sequential execution for better stability
+        try {
+          await this.services.obs.discoverAudioSources();
+          console.log('Unified GlobalStateService: Audio sources updated');
+        } catch (sourcesError) {
+          if (!sourcesError.message?.includes('Socket not identified')) {
+            console.error('Unified GlobalStateService: Audio sources discovery failed:', sourcesError);
+          }
+        }
+        
+        // Wait briefly between operations
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        try {
+          await this.discoverOBSScenes();
+          console.log('Unified GlobalStateService: Scenes updated');
+        } catch (scenesError) {
+          if (!scenesError.message?.includes('Socket not identified')) {
+            console.error('Unified GlobalStateService: Scenes discovery failed:', scenesError);
+          }
+        }
+        
+      } else {
+        console.log('Unified GlobalStateService: OBS not connected, skipping discovery');
+      }
+    } catch (error) {
+      console.error('Unified GlobalStateService: Failed to discover OBS data:', error);
+    }
+  }
+
+  async discoverOBSScenes() {
+    try {
+      if (this.services.obs && this.services.obs.obs && this.services.obs.connected) {
+        // Extra safety check: Wait for proper connection
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const scenesResponse = await this.services.obs.obs.call('GetSceneList');
+        const scenes = scenesResponse.scenes || [];
+        
+        this.updateOBSState({ 
+          scenes: scenes, 
+          lastSceneDiscovery: Date.now() 
+        });
+        
+        console.log('Unified GlobalStateService: Discovered', scenes.length, 'OBS scenes');
+        this.triggerCallbacks('scenesDiscovered', scenes);
+        
+        return scenes;
+      } else {
+        console.log('Unified GlobalStateService: OBS not ready for scene discovery');
+        return [];
+      }
+    } catch (error) {
+      if (!error.message?.includes('Socket not identified')) {
+        console.error('Unified GlobalStateService: Failed to discover scenes:', error);
+      }
+      return [];
+    }
+  }
+
+  // ===== DASHBOARD-SPECIFIC METHODS =====
+  
+  // Widget Registration for better control
+  registerDashboardWidget(widgetId, widgetType, config = {}) {
+    this.states.dashboard.widgets.set(widgetId, {
+      id: widgetId,
+      type: widgetType,
+      config: config,
+      registered: Date.now()
+    });
+    
+    console.log(`Unified GlobalStateService: Registered dashboard widget: ${widgetId} (${widgetType})`);
+    this.triggerCallbacks('widgetRegistered', { widgetId, widgetType, config });
+  }
+
+  unregisterDashboardWidget(widgetId) {
+    this.states.dashboard.widgets.delete(widgetId);
+    console.log(`Unified GlobalStateService: Unregistered dashboard widget: ${widgetId}`);
+    this.triggerCallbacks('widgetUnregistered', { widgetId });
+  }
+
+  // Context Menu Management for Dashboard
+  setActiveContextMenu(menuId, menuData = null) {
+    this.states.dashboard.activeContextMenu = { id: menuId, data: menuData, timestamp: Date.now() };
+    this.triggerCallbacks('contextMenuChanged', this.states.dashboard.activeContextMenu);
+  }
+
+  clearActiveContextMenu() {
+    this.states.dashboard.activeContextMenu = null;
+    this.triggerCallbacks('contextMenuChanged', null);
+  }
+
+  getActiveContextMenu() {
+    return this.states.dashboard.activeContextMenu;
+  }
+
+  // Dashboard Edit Mode
+  setDashboardEditMode(enabled) {
+    this.states.dashboard.editMode = enabled;
+    console.log('Unified GlobalStateService: Dashboard edit mode:', enabled);
+    this.triggerCallbacks('dashboardEditModeChanged', enabled);
+  }
+
+  isDashboardEditMode() {
+    return this.states.dashboard.editMode;
+  }
+
+  // ===== HOTKEY MANAGEMENT =====
+  
+  setHotkeyMapping(hotkeyId, mapping) {
+    this.states.mappings.hotkeys.set(hotkeyId, {
+      ...mapping,
+      created: Date.now()
+    });
+    
+    console.log(`Unified GlobalStateService: Hotkey mapping set: ${hotkeyId}`, mapping);
+    this.triggerCallbacks('hotkeyMappingChanged', { hotkeyId, mapping });
+    this.saveHotkeyMappings();
+  }
+
+  removeHotkeyMapping(hotkeyId) {
+    this.states.mappings.hotkeys.delete(hotkeyId);
+    console.log(`Unified GlobalStateService: Hotkey mapping removed: ${hotkeyId}`);
+    this.triggerCallbacks('hotkeyMappingRemoved', { hotkeyId });
+    this.saveHotkeyMappings();
+  }
+
+  getAllHotkeyMappings() {
+    const mappings = {};
+    this.states.mappings.hotkeys.forEach((value, key) => {
+      mappings[key] = value;
+    });
+    return mappings;
+  }
+
+  saveHotkeyMappings() {
+    try {
+      const data = this.getAllHotkeyMappings();
+      localStorage.setItem('dashboardHotkeyMappings', JSON.stringify(data));
+      console.log('Unified GlobalStateService: Hotkey mappings saved');
+    } catch (error) {
+      console.error('Unified GlobalStateService: Failed to save hotkey mappings:', error);
+    }
+  }
+
+  loadHotkeyMappings() {
+    try {
+      const stored = localStorage.getItem('dashboardHotkeyMappings');
+      if (stored) {
+        const data = JSON.parse(stored);
+        this.states.mappings.hotkeys.clear();
+        
+        Object.entries(data).forEach(([key, value]) => {
+          this.states.mappings.hotkeys.set(key, value);
+        });
+        
+        console.log('Unified GlobalStateService: Hotkey mappings loaded:', this.states.mappings.hotkeys.size);
+        return true;
+      }
+    } catch (error) {
+      console.error('Unified GlobalStateService: Failed to load hotkey mappings:', error);
+    }
+    return false;
+  }
+
+  // ===== AUDIO LEVEL HANDLING WITH PERFORMANCE OPTIMIZATION =====
+  handleThrottledAudioLevels(data) {
+    const { sourceName, levels } = data;
+    const now = Date.now();
+    
+    // Throttle audio level updates for better performance
+    const lastUpdate = this.audioLevelThrottle.get(sourceName) || 0;
+    if (now - lastUpdate < 50) { // Max 20 FPS for audio levels
+      return;
+    }
+    
+    this.audioLevelThrottle.set(sourceName, now);
+    this.updateAudioLevels(sourceName, levels);
   }
 
   // State Updates
   updateOBSState(updates) {
     this.states.obs = { ...this.states.obs, ...updates };
-    //console.log('GlobalStateService: OBS state updated:', updates);
+    //console.log('Unified GlobalStateService: OBS state updated:', updates);
     this.triggerCallbacks('obsStateChanged', this.states.obs);
   }
 
-  // Audio Level Updates (Real-time) - GEFIXT für bessere Visualisierung
+  // Audio Level Updates (Real-time) - Enhanced for better visualization
   updateAudioLevels(inputName, levels) {
     // Store in both new Map and old object for compatibility
     this.states.obs.realTimeAudioLevels.set(inputName, levels);
     this.states.obs.audioLevels[inputName] = levels;
     
-    // Debug-Log für erste 5 Updates pro Source
+    // Debug log for first 5 updates per source
     if (!this.audioDebugCounters) this.audioDebugCounters = {};
     if (!this.audioDebugCounters[inputName]) this.audioDebugCounters[inputName] = 0;
     if (this.audioDebugCounters[inputName] < 5) {
-      console.log(`🎵 GlobalStateService: Audio levels for ${inputName}:`, levels);
+      console.log(`🎵 Unified GlobalStateService: Audio levels for ${inputName}:`, levels);
       this.audioDebugCounters[inputName]++;
     }
     
     // Get all current levels for the callback
     const allLevels = this.getAllAudioLevels();
     
-    // WICHTIG: Trigger OBS state update für AudioMixer
+    // IMPORTANT: Trigger OBS state update for AudioMixer
     this.states.obs = { 
       ...this.states.obs, 
       audioLevels: this.states.obs.audioLevels,
@@ -109,7 +320,7 @@ class GlobalStateService {
       this.states.obs.sources[sourceIndex].volumeDb = volumeDb;
       this.states.obs.sources[sourceIndex].volume = this.dbToMultiplier(volumeDb);
       
-      console.log(`GlobalStateService: Volume synchronized for ${sourceName}: ${volumeDb}dB`);
+      console.log(`Unified GlobalStateService: Volume synchronized for ${sourceName}: ${volumeDb}dB`);
       
       // Trigger callback for UI synchronization
       this.triggerCallbacks('sourceVolumeUpdated', {
@@ -134,13 +345,13 @@ class GlobalStateService {
 
   updateMIDIState(updates) {
     this.states.midi = { ...this.states.midi, ...updates };
-    console.log('GlobalStateService: MIDI state updated:', updates);
+    console.log('Unified GlobalStateService: MIDI state updated:', updates);
     this.triggerCallbacks('midiStateChanged', this.states.midi);
   }
 
   updateMappings(type, mappings) {
     this.states.mappings[type] = mappings;
-    console.log(`GlobalStateService: ${type} mappings updated:`, mappings);
+    console.log(`Unified GlobalStateService: ${type} mappings updated:`, mappings);
     this.triggerCallbacks('mappingsChanged', { type, mappings });
     this.saveMappings();
   }
@@ -150,7 +361,7 @@ class GlobalStateService {
     const stringKey = key.toString();
     this.states.mappings.midi.set(stringKey, { ...mapping, source });
     
-    console.log(`GlobalStateService: MIDI mapping set: ${stringKey}`, mapping, `(source: ${source})`);
+    console.log(`Unified GlobalStateService: MIDI mapping set: ${stringKey}`, mapping, `(source: ${source})`);
     
     // Only update the MIDI service if this didn't come from the MIDI service
     if (this.services.midi && source !== 'MIDIService') {
@@ -158,9 +369,9 @@ class GlobalStateService {
         // Remove the 'source' property before passing to MIDI service
         const { source: _, ...cleanMapping } = { ...mapping, source };
         this.services.midi.setMapping(stringKey, cleanMapping);
-        console.log(`GlobalStateService: Synced new mapping ${stringKey} to MIDI service`);
+        console.log(`Unified GlobalStateService: Synced new mapping ${stringKey} to MIDI service`);
       } catch (error) {
-        console.error(`GlobalStateService: Failed to sync mapping ${stringKey} to MIDI service:`, error);
+        console.error(`Unified GlobalStateService: Failed to sync mapping ${stringKey} to MIDI service:`, error);
       }
     }
     
@@ -196,7 +407,7 @@ class GlobalStateService {
     
     this.states.mappings.audio[sourceName][type] = midiKey;
     
-    console.log(`GlobalStateService: Audio source mapping: ${sourceName} ${type} -> ${midiKey}`);
+    console.log(`Unified GlobalStateService: Audio source mapping: ${sourceName} ${type} -> ${midiKey}`);
     
     this.triggerCallbacks('audioMappingChanged', { sourceName, type, midiKey });
     this.saveMappings();
@@ -206,9 +417,77 @@ class GlobalStateService {
     return this.states.mappings.audio;
   }
 
+  // ===== AUDIO SOURCE MANAGEMENT WITH CACHING =====
+  
+  getAudioSources() {
+    // Enhanced audio source provision with caching
+    const sources = this.states.obs.sources;
+    
+    if (sources.length === 0 && this.services.obs && this.services.obs.isConnected()) {
+      // Trigger discovery if no sources available but OBS connected
+      console.log('Unified GlobalStateService: No audio sources cached, triggering discovery...');
+      this.discoverOBSDataWithCaching();
+    }
+    
+    return sources;
+  }
+
+  getAudioSourcesForMixer() {
+    // Special method for AudioMixer Widget
+    const sources = this.getAudioSources();
+    
+    // Filter only real audio sources
+    const audioSources = sources.filter(source => {
+      const kind = source.kind || source.inputKind || '';
+      return kind.includes('audio') || 
+             kind.includes('wasapi') || 
+             kind.includes('pulse') ||
+             kind === 'coreaudio_input_capture' ||
+             kind === 'coreaudio_output_capture';
+    });
+    
+    console.log('Unified GlobalStateService: Audio sources for mixer:', audioSources.length);
+    return audioSources;
+  }
+
+  getOBSScenes() {
+    const scenes = this.states.obs.scenes;
+    
+    if (scenes.length === 0 && this.services.obs && this.services.obs.isConnected()) {
+      console.log('Unified GlobalStateService: No scenes cached, triggering discovery...');
+      this.discoverOBSScenes();
+    }
+    
+    return scenes;
+  }
+
+  findExactSourceName(sourceName) {
+    const availableSources = this.states.obs.sources;
+    
+    // Exact match first
+    const exactSource = availableSources.find(source => source.name === sourceName);
+    if (exactSource) {
+      return exactSource.name;
+    }
+    
+    // Partial match
+    const partialSource = availableSources.find(source => 
+      source.name.toLowerCase().includes(sourceName.toLowerCase()) ||
+      sourceName.toLowerCase().includes(source.name.toLowerCase())
+    );
+    
+    if (partialSource) {
+      console.log(`Unified GlobalStateService: Found partial match: ${sourceName} -> ${partialSource.name}`);
+      return partialSource.name;
+    }
+    
+    console.warn(`Unified GlobalStateService: No matching source found for: ${sourceName}`);
+    return sourceName; // Fallback to original name
+  }
+
   // MIDI Learning Management (Central)
   startMIDILearning(target, callback) {
-    console.log(`GlobalStateService: Starting MIDI learning for: ${target}`);
+    console.log(`Unified GlobalStateService: Starting MIDI learning for: ${target}`);
     
     this.updateMIDIState({
       learning: true,
@@ -217,7 +496,7 @@ class GlobalStateService {
 
     if (this.services.midi) {
       return this.services.midi.startLearning((message) => {
-        console.log('GlobalStateService: MIDI learning completed:', message);
+        console.log('Unified GlobalStateService: MIDI learning completed:', message);
         
         this.updateMIDIState({
           learning: false,
@@ -236,7 +515,7 @@ class GlobalStateService {
   }
 
   stopMIDILearning() {
-    console.log('GlobalStateService: Stopping MIDI learning');
+    console.log('Unified GlobalStateService: Stopping MIDI learning');
     
     this.updateMIDIState({
       learning: false,
@@ -252,45 +531,23 @@ class GlobalStateService {
 
   // Volume Control (Central)
   async setVolume(sourceName, volumeDb, source = 'unknown') {
-    console.log(`GlobalStateService: Setting volume for ${sourceName} to ${volumeDb}dB (from: ${source})`);
+    console.log(`Unified GlobalStateService: Setting volume for ${sourceName} to ${volumeDb}dB (from: ${source})`);
     
     if (!this.states.obs.connected) {
-      console.error('GlobalStateService: OBS not connected, cannot set volume');
+      console.error('Unified GlobalStateService: OBS not connected, cannot set volume');
       return false;
     }
 
-    // Try to find exact source name in available sources
-    let targetSourceName = sourceName;
-    const availableSources = this.states.obs.sources;
-    
-    // If source name is not exact, try to find it
-    const exactSource = availableSources.find(source => 
-      source.name === sourceName || 
-      source.name.toLowerCase().includes(sourceName.toLowerCase()) ||
-      sourceName.toLowerCase().includes(source.name.toLowerCase())
-    );
-    
-    if (exactSource) {
-      targetSourceName = exactSource.name;
-      console.log(`GlobalStateService: Found exact source: ${targetSourceName}`);
-    } else {
-      // Try OBS source mapping
-      if (this.services.obs && this.services.obs.mapApplicationToSource) {
-        const mappedName = this.services.obs.mapApplicationToSource(sourceName);
-        const mappedSource = availableSources.find(source => source.name === mappedName);
-        if (mappedSource) {
-          targetSourceName = mappedSource.name;
-          console.log(`GlobalStateService: Mapped to source: ${targetSourceName}`);
-        }
-      }
-    }
+    const targetSourceName = this.findExactSourceName(sourceName);
 
     if (this.services.obs) {
       const success = await this.services.obs.setVolume(targetSourceName, volumeDb);
       if (success) {
-        console.log(`GlobalStateService: Volume set successfully: ${targetSourceName} = ${volumeDb}dB`);
+        console.log(`Unified GlobalStateService: Volume set successfully: ${targetSourceName} = ${volumeDb}dB`);
+        // Update local state immediately for better UX
+        this.updateSourceVolume(targetSourceName, volumeDb);
       } else {
-        console.error(`GlobalStateService: Failed to set volume: ${targetSourceName}`);
+        console.error(`Unified GlobalStateService: Failed to set volume: ${targetSourceName}`);
       }
       return success;
     }
@@ -300,44 +557,43 @@ class GlobalStateService {
 
   // Mute Control (Central)
   async toggleMute(sourceName, source = 'unknown') {
-    console.log(`GlobalStateService: Toggling mute for ${sourceName} (from: ${source})`);
+    console.log(`Unified GlobalStateService: Toggling mute for ${sourceName} (from: ${source})`);
     
     if (!this.states.obs.connected) {
-      console.error('GlobalStateService: OBS not connected, cannot toggle mute');
+      console.error('Unified GlobalStateService: OBS not connected, cannot toggle mute');
       return false;
     }
 
-    // Try to find exact source name in available sources
-    let targetSourceName = sourceName;
-    const availableSources = this.states.obs.sources;
-    
-    // If source name is not exact, try to find it
-    const exactSource = availableSources.find(source => 
-      source.name === sourceName || 
-      source.name.toLowerCase().includes(sourceName.toLowerCase()) ||
-      sourceName.toLowerCase().includes(source.name.toLowerCase())
-    );
-    
-    if (exactSource) {
-      targetSourceName = exactSource.name;
-      console.log(`GlobalStateService: Found exact source for mute: ${targetSourceName}`);
-    } else {
-      // Try OBS source mapping
-      if (this.services.obs && this.services.obs.mapApplicationToSource) {
-        const mappedName = this.services.obs.mapApplicationToSource(sourceName);
-        const mappedSource = availableSources.find(source => source.name === mappedName);
-        if (mappedSource) {
-          targetSourceName = mappedSource.name;
-          console.log(`GlobalStateService: Mapped to source for mute: ${targetSourceName}`);
-        }
-      }
-    }
+    const targetSourceName = this.findExactSourceName(sourceName);
 
     if (this.services.obs) {
-      return await this.services.obs.toggleMute(targetSourceName);
+      const success = await this.services.obs.toggleMute(targetSourceName);
+      if (success) {
+        console.log(`Unified GlobalStateService: Mute toggled successfully: ${targetSourceName}`);
+      }
+      return success;
     }
     
     return false;
+  }
+
+  // Sync MIDI mappings to the MIDI service
+  syncMIDIMappingsToService() {
+    if (!this.services.midi) return;
+    
+    console.log('Unified GlobalStateService: Syncing MIDI mappings to service');
+    
+    // Apply all current mappings to the MIDI service
+    this.states.mappings.midi.forEach((mapping, key) => {
+      try {
+        // Remove the 'source' property before passing to MIDI service
+        const { source, ...cleanMapping } = mapping;
+        this.services.midi.setMapping(key, cleanMapping);
+        console.log(`Unified GlobalStateService: Synced mapping ${key} to MIDI service`);
+      } catch (error) {
+        console.error(`Unified GlobalStateService: Failed to sync mapping ${key}:`, error);
+      }
+    });
   }
 
   // Persistence
@@ -345,7 +601,8 @@ class GlobalStateService {
     try {
       const data = {
         midi: {},
-        audio: this.states.mappings.audio
+        audio: this.states.mappings.audio,
+        hotkeys: {}
       };
       
       // Convert Map to Object for saving
@@ -353,19 +610,23 @@ class GlobalStateService {
         data.midi[key] = value;
       });
       
-      localStorage.setItem('globalMappings', JSON.stringify(data));
-      console.log('GlobalStateService: Mappings saved to localStorage');
+      this.states.mappings.hotkeys.forEach((value, key) => {
+        data.hotkeys[key] = value;
+      });
+      
+      localStorage.setItem('unifiedGlobalMappings', JSON.stringify(data));
+      console.log('Unified GlobalStateService: All mappings saved to localStorage');
     } catch (error) {
-      console.error('GlobalStateService: Failed to save mappings:', error);
+      console.error('Unified GlobalStateService: Failed to save mappings:', error);
     }
   }
 
   loadMappings() {
     try {
-      const stored = localStorage.getItem('globalMappings');
+      const stored = localStorage.getItem('unifiedGlobalMappings');
       if (stored) {
         const data = JSON.parse(stored);
-        console.log('GlobalStateService: Loading mappings from localStorage:', data);
+        console.log('Unified GlobalStateService: Loading mappings from localStorage:', data);
         
         // Load MIDI mappings
         if (data.midi) {
@@ -380,11 +641,19 @@ class GlobalStateService {
           this.states.mappings.audio = data.audio;
         }
         
-        console.log('GlobalStateService: Mappings loaded successfully');
+        // Load Hotkey mappings
+        if (data.hotkeys) {
+          this.states.mappings.hotkeys.clear();
+          Object.entries(data.hotkeys).forEach(([key, value]) => {
+            this.states.mappings.hotkeys.set(key, value);
+          });
+        }
+        
+        console.log('Unified GlobalStateService: All mappings loaded successfully');
         return true;
       }
     } catch (error) {
-      console.error('GlobalStateService: Failed to load mappings:', error);
+      console.error('Unified GlobalStateService: Failed to load mappings:', error);
     }
     
     return false;
@@ -399,16 +668,16 @@ class GlobalStateService {
     return this.states.midi;
   }
 
+  getDashboardState() {
+    return this.states.dashboard;
+  }
+
   isOBSConnected() {
     return this.states.obs.connected;
   }
 
   isMIDIConnected() {
     return this.states.midi.connected;
-  }
-
-  getAudioSources() {
-    return this.states.obs.sources;
   }
 
   getAudioLevels() {
@@ -427,14 +696,14 @@ class GlobalStateService {
     return this.states.obs.realTimeAudioLevels.get(sourceName);
   }
 
-  // 🚀 Source Visibility Management (für Performance)
+  // 🚀 Source Visibility Management (for performance)
   setSourceHidden(sourceName, hidden = true) {
     if (hidden) {
       this.hiddenSources.add(sourceName);
     } else {
       this.hiddenSources.delete(sourceName);
     }
-    console.log(`GlobalStateService: Source ${sourceName} ${hidden ? 'hidden' : 'shown'} - Performance optimized`);
+    console.log(`Unified GlobalStateService: Source ${sourceName} ${hidden ? 'hidden' : 'shown'} - Performance optimized`);
   }
 
   isSourceHidden(sourceName) {
@@ -451,7 +720,7 @@ class GlobalStateService {
       this.callbacks.set(event, []);
     }
     this.callbacks.get(event).push(callback);
-    console.log(`GlobalStateService: Callback registered for: ${event}`);
+    console.log(`Unified GlobalStateService: Callback registered for: ${event}`);
   }
 
   off(event, callback) {
@@ -459,7 +728,7 @@ class GlobalStateService {
     const index = callbacks.indexOf(callback);
     if (index !== -1) {
       callbacks.splice(index, 1);
-      console.log(`GlobalStateService: Callback removed for: ${event}`);
+      console.log(`Unified GlobalStateService: Callback removed for: ${event}`);
     }
   }
 
@@ -469,7 +738,7 @@ class GlobalStateService {
       try {
         callback(data);
       } catch (error) {
-        console.error(`GlobalStateService: Callback error (${event}):`, error);
+        console.error(`Unified GlobalStateService: Callback error (${event}):`, error);
       }
     });
   }
@@ -482,12 +751,17 @@ class GlobalStateService {
         connected: false, 
         sources: [], 
         audioLevels: {},
-        realTimeAudioLevels: new Map()
+        realTimeAudioLevels: new Map(),
+        scenes: [],
+        lastSourceDiscovery: 0,
+        lastSceneDiscovery: 0
       },
-      midi: { connected: false, devices: { inputs: [], outputs: [] }, lastActivity: null },
-      mappings: { midi: new Map(), audio: {} }
+      midi: { connected: false, devices: { inputs: [], outputs: [] }, lastActivity: null, learning: false, learningTarget: null },
+      mappings: { midi: new Map(), audio: {}, hotkeys: new Map() },
+      dashboard: { widgets: new Map(), activeContextMenu: null, editMode: false }
     };
-    console.log('GlobalStateService: Destroyed');
+    this.audioLevelThrottle.clear();
+    console.log('Unified GlobalStateService: Destroyed');
   }
 }
 
