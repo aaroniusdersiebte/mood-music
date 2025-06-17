@@ -91,10 +91,29 @@ const EnhancedAudioMixer = () => {
 
   const initializeServices = async () => {
     try {
+      console.log('🎵 EnhancedAudioMixer: Starting initialization...');
+      
+      // Wait for ServiceManager to be ready
+      if (window.serviceManager && !window.serviceManager.initialized) {
+        console.log('🔄 Waiting for ServiceManager to initialize...');
+        let attempts = 0;
+        while (!window.serviceManager.initialized && attempts < 50) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          attempts++;
+        }
+      }
+      
       // Load initial state from GlobalStateService
       const obsState = globalStateService.getOBSState();
       const midiState = globalStateService.getMIDIState();
       const audioMappings = globalStateService.getAudioSourceMappings();
+      
+      console.log('🔍 EnhancedAudioMixer: Initial states loaded', {
+        obsConnected: obsState.connected,
+        sourcesCount: obsState.sources?.length || 0,
+        midiConnected: midiState.connected,
+        mappingsCount: Object.keys(audioMappings).length
+      });
       
       setConnected(obsState.connected);
       setAudioSources(obsState.sources || []);
@@ -119,7 +138,17 @@ const EnhancedAudioMixer = () => {
         setRealTimeAudioLevels(levelsObj);
       }
       
-      console.log('EnhancedAudioMixer: Initialization completed', {
+      // Trigger OBS source discovery if connected but no sources
+      if (obsState.connected && (!obsState.sources || obsState.sources.length === 0)) {
+        console.log('🔍 EnhancedAudioMixer: Triggering OBS source discovery...');
+        setTimeout(() => {
+          if (globalStateService.services?.obs) {
+            globalStateService.services.obs.discoverAudioSources();
+          }
+        }, 1000);
+      }
+      
+      console.log('✅ EnhancedAudioMixer: Initialization completed', {
         obsConnected: obsState.connected,
         sourcesCount: obsState.sources?.length || 0,
         midiConnected: midiState.connected,
@@ -127,7 +156,7 @@ const EnhancedAudioMixer = () => {
       });
       
     } catch (error) {
-      console.error('EnhancedAudioMixer: Failed to initialize:', error);
+      console.error('❌ EnhancedAudioMixer: Failed to initialize:', error);
     }
   };
 
@@ -220,14 +249,23 @@ const EnhancedAudioMixer = () => {
   }, []);
 
   const handleMIDILearningCompleted = useCallback((data) => {
-    if (learningMidi) {
-      const { sourceName, type } = learningMidi;
+    console.log('🎯 EnhancedAudioMixer: MIDI Learning completed callback:', data);
+    
+    // 🔥 FIX: Store current learning state before it gets cleared by race condition
+    const currentLearningState = learningMidi;
+    
+    if (currentLearningState) {
+      const { sourceName, type } = currentLearningState;
       const midiKey = data.message.note.toString();
       
-      // WICHTIG: Stop learning IMMEDIATELY to prevent infinite loop
-      setLearningMidi(null);
-      globalStateService.stopMIDILearning();
+      console.log('🎯 EnhancedAudioMixer: Processing learning for:', {
+        sourceName,
+        type,
+        midiKey,
+        midiMessage: data.message
+      });
       
+      // ✅ Update local state
       setSourceMidiMappings(prev => ({
         ...prev,
         [sourceName]: {
@@ -236,26 +274,60 @@ const EnhancedAudioMixer = () => {
         }
       }));
       
+      // ✅ Save to global state audio mappings
       globalStateService.setAudioSourceMapping(sourceName, type, midiKey);
       
+      // ✅ Create and save MIDI mapping to MIDI service
+      let mapping;
       if (type === 'volume') {
-        const mapping = {
+        mapping = {
           type: 'volume',
           target: sourceName,
           min: 0,
           max: 127
         };
-        globalStateService.setMIDIMapping(midiKey, mapping, 'EnhancedAudioMixer');
       } else if (type === 'mute') {
-        const mapping = {
+        mapping = {
           type: 'hotkey',
           action: 'mute',
           target: sourceName
         };
-        globalStateService.setMIDIMapping(midiKey, mapping, 'EnhancedAudioMixer');
       }
       
-      console.log('✅ EnhancedAudioMixer: MIDI learning completed for', sourceName, type);
+      if (mapping) {
+        console.log('🎯 EnhancedAudioMixer: Saving MIDI mapping:', { key: midiKey, mapping });
+        
+        // 🔥 CRITICAL: Save with correct source to ensure sync
+        globalStateService.setMIDIMapping(midiKey, mapping, 'EnhancedAudioMixer');
+        
+        // 🔥 CRITICAL: Force sync to MIDI service immediately
+        if (globalStateService.services.midi) {
+          try {
+            globalStateService.services.midi.setMapping(midiKey, mapping);
+            console.log('✅ EnhancedAudioMixer: MIDI mapping synced to service successfully');
+          } catch (error) {
+            console.error('❌ EnhancedAudioMixer: Failed to sync mapping to MIDI service:', error);
+          }
+        } else {
+          console.warn('⚠️ EnhancedAudioMixer: MIDI service not available for direct sync');
+        }
+        
+        console.log('✅ EnhancedAudioMixer: MIDI learning completed for', sourceName, type, '-> CC' + midiKey);
+        
+        // Show success notification
+        setTimeout(() => {
+          alert(`✅ MIDI Learning successful!\n${sourceName} ${type} is now mapped to CC${midiKey}`);
+        }, 100);
+      } else {
+        console.error('❌ EnhancedAudioMixer: Failed to create mapping for type:', type);
+      }
+      
+      // 🔥 FIX: Clear learning state AND stop MIDI learning AFTER processing is complete
+      setLearningMidi(null);
+      globalStateService.stopMIDILearning();
+      
+    } else {
+      console.warn('⚠️ EnhancedAudioMixer: MIDI learning completed but no learning state found - this should not happen anymore');
     }
   }, [learningMidi]);
 
@@ -320,9 +392,13 @@ const EnhancedAudioMixer = () => {
 
   // Audio Controls
   const handleVolumeChange = async (sourceName, volumeDb) => {
-    const success = await globalStateService.setVolume(sourceName, volumeDb, 'EnhancedAudioMixer');
-    if (!success) {
-      console.error('EnhancedAudioMixer: Failed to set volume');
+    try {
+      const success = await globalStateService.setVolume(sourceName, volumeDb, 'EnhancedAudioMixer');
+      if (!success) {
+        console.warn('EnhancedAudioMixer: Volume change was not applied for', sourceName);
+      }
+    } catch (error) {
+      console.error('EnhancedAudioMixer: Failed to set volume for', sourceName, ':', error);
     }
   };
   
@@ -335,15 +411,19 @@ const EnhancedAudioMixer = () => {
   }, []);
 
   const handleMuteToggle = async (sourceName) => {
-    const success = await globalStateService.toggleMute(sourceName, 'EnhancedAudioMixer');
-    if (!success) {
-      console.error('EnhancedAudioMixer: Failed to toggle mute');
+    try {
+      const success = await globalStateService.toggleMute(sourceName, 'EnhancedAudioMixer');
+      if (!success) {
+        console.warn('EnhancedAudioMixer: Mute toggle was not applied for', sourceName);
+      }
+    } catch (error) {
+      console.error('EnhancedAudioMixer: Failed to toggle mute for', sourceName, ':', error);
     }
   };
 
   // MIDI Learning Functions
   const startMidiLearning = (sourceName, type) => {
-    console.log('EnhancedAudioMixer: Starting MIDI learning for', sourceName, type);
+    console.log('🎹 EnhancedAudioMixer: Starting MIDI learning for', sourceName, type);
     
     // Stop any existing learning first
     if (learningMidi) {
@@ -352,19 +432,32 @@ const EnhancedAudioMixer = () => {
     
     setLearningMidi({ sourceName, type });
     
+    // Update MIDI state to show learning
+    globalStateService.updateMIDIState({
+      learning: true,
+      learningTarget: `EnhancedAudioMixer_${sourceName}_${type}`
+    });
+    
     // Add timeout to prevent infinite learning
-    setTimeout(() => {
-      if (learningMidi && learningMidi.sourceName === sourceName && learningMidi.type === type) {
-        console.log('EnhancedAudioMixer: MIDI learning timeout');
-        setLearningMidi(null);
-        globalStateService.stopMIDILearning();
-      }
+    const learningTimeout = setTimeout(() => {
+      console.log('⏰ EnhancedAudioMixer: MIDI learning timeout');
+      setLearningMidi(null);
+      globalStateService.stopMIDILearning();
     }, 30000);
     
-    const success = globalStateService.startMIDILearning(`EnhancedAudioMixer_${sourceName}_${type}`);
-    if (!success) {
-      console.error('EnhancedAudioMixer: Failed to start MIDI learning');
+    try {
+      const success = globalStateService.startMIDILearning(`EnhancedAudioMixer_${sourceName}_${type}`);
+      if (!success) {
+        console.warn('⚠️ EnhancedAudioMixer: MIDI learning could not be started for', sourceName, type);
+        setLearningMidi(null);
+        clearTimeout(learningTimeout);
+      } else {
+        console.log('✅ EnhancedAudioMixer: MIDI learning started successfully');
+      }
+    } catch (error) {
+      console.error('❌ EnhancedAudioMixer: Failed to start MIDI learning for', sourceName, type, ':', error);
       setLearningMidi(null);
+      clearTimeout(learningTimeout);
     }
   };
 
@@ -417,8 +510,14 @@ const EnhancedAudioMixer = () => {
     setSelectedSources(new Set());
   };
 
-  // Drag & Drop Functions for Source Reordering
+  // Drag & Drop Functions for Source Reordering - FIXED VERSION
   const handleDragStart = (e, source, index) => {
+    // Only allow drag if it's from the drag handle, not volume slider
+    if (!e.target.classList.contains('drag-handle') && !e.target.closest('.drag-handle')) {
+      e.preventDefault();
+      return false;
+    }
+    
     console.log('EnhancedAudioMixer: Drag start:', source.name, 'at index', index);
     setDraggedSource({ source, index });
     e.dataTransfer.effectAllowed = 'move';
@@ -626,30 +725,56 @@ const EnhancedAudioMixer = () => {
     }
     
     try {
-      const obsService = globalStateService.services.obs;
-      if (obsService) {
-        await obsService.connect(
-          settings.obsWebSocketHost,
-          settings.obsWebSocketPort,
-          settings.obsWebSocketPassword
+      console.log('🔗 EnhancedAudioMixer: Connecting to OBS...');
+      
+      // Use ServiceManager for proper connection
+      if (window.serviceManager) {
+        const success = await window.serviceManager.connectToOBS(
+          settings.obsWebSocketHost || 'localhost',
+          settings.obsWebSocketPort || 4455,
+          settings.obsWebSocketPassword || ''
         );
+        
+        if (success) {
+          console.log('✅ EnhancedAudioMixer: OBS connected successfully');
+        } else {
+          throw new Error('Connection failed');
+        }
+      } else {
+        // Fallback to direct service access
+        const obsService = globalStateService.services.obs;
+        if (obsService) {
+          await obsService.connect(
+            settings.obsWebSocketHost || 'localhost',
+            settings.obsWebSocketPort || 4455,
+            settings.obsWebSocketPassword || ''
+          );
+        } else {
+          throw new Error('OBS service not available');
+        }
       }
     } catch (error) {
-      console.error('Failed to connect to OBS:', error);
-      alert('Failed to connect to OBS. Please check your settings.');
+      console.error('❌ Failed to connect to OBS:', error);
+      alert('Failed to connect to OBS. Please check your settings and ensure OBS is running with WebSocket enabled.');
     }
   };
 
   const refreshSources = async () => {
     if (connected) {
       try {
+        console.log('🔄 EnhancedAudioMixer: Refreshing OBS sources...');
         const obsService = globalStateService.services.obs;
-        if (obsService) {
+        if (obsService && obsService.discoverAudioSources) {
           await obsService.discoverAudioSources();
+          console.log('✅ EnhancedAudioMixer: Sources refreshed');
+        } else {
+          console.warn('⚠️ EnhancedAudioMixer: OBS service not available for refresh');
         }
       } catch (error) {
-        console.error('Failed to refresh sources:', error);
+        console.error('❌ Failed to refresh sources:', error);
       }
+    } else {
+      console.warn('⚠️ EnhancedAudioMixer: Cannot refresh sources - OBS not connected');
     }
   };
 
@@ -776,12 +901,9 @@ const EnhancedAudioMixer = () => {
         } ${
           isDragging ? 'opacity-50 transform scale-95' : ''
         }`}
-        draggable={true}
-        onDragStart={(e) => handleDragStart(e, source, index)}
         onDragOver={(e) => handleDragOver(e, index)}
         onDragLeave={handleDragLeave}
         onDrop={(e) => handleDrop(e, index)}
-        onDragEnd={handleDragEnd}
       >
         {/* Drop indicator */}
         {isDraggedOver && (
@@ -791,7 +913,13 @@ const EnhancedAudioMixer = () => {
         <div className="flex items-start space-x-3">
           {/* Drag Handle & Selection */}
           <div className="flex items-center space-x-2 mt-1">
-            <div className="p-1 text-gray-500 hover:text-white cursor-move" title="Drag to reorder">
+            <div 
+              className="drag-handle p-1 text-gray-500 hover:text-white cursor-move transition-colors" 
+              title="Drag to reorder"
+              draggable={true}
+              onDragStart={(e) => handleDragStart(e, source, index)}
+              onDragEnd={handleDragEnd}
+            >
               <GripVertical className="w-4 h-4" />
             </div>
             <input
@@ -857,7 +985,10 @@ const EnhancedAudioMixer = () => {
                 
                 <div className="flex items-center space-x-1">
                   <button
-                    onClick={() => isLearningMute ? stopMidiLearning() : startMidiLearning(source.name, 'mute')}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent any bubbling
+                      isLearningMute ? stopMidiLearning() : startMidiLearning(source.name, 'mute');
+                    }}
                     className={`px-1 py-0.5 text-xs rounded transition-colors ${
                       isLearningMute 
                         ? 'bg-red-500 text-white animate-pulse' 
@@ -871,7 +1002,10 @@ const EnhancedAudioMixer = () => {
                   
                   {muteMapping && !isLearningMute && (
                     <button
-                      onClick={() => removeMidiMapping('mute')}
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevent any bubbling
+                        removeMidiMapping('mute');
+                      }}
                       className="px-1 py-0.5 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
                     >
                       ×
@@ -888,42 +1022,60 @@ const EnhancedAudioMixer = () => {
                   </div>
                   <div className="flex items-center space-x-1">
                     <button
-                      onClick={() => isLearningVolume ? stopMidiLearning() : startMidiLearning(source.name, 'volume')}
-                      className={`px-2 py-0.5 text-xs rounded transition-colors ${
-                        isLearningVolume 
-                          ? 'bg-red-500 text-white animate-pulse' 
-                          : volumeMapping
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent any bubbling
+                    isLearningVolume ? stopMidiLearning() : startMidiLearning(source.name, 'volume');
+                    }}
+                    className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                    isLearningVolume 
+                    ? 'bg-red-500 text-white animate-pulse' 
+                        : volumeMapping
                             ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
-                            : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
+                          : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
                       }`}
-                    >
-                      {isLearningVolume ? 'Cancel' : volumeMapping ? `CC${volumeMapping}` : 'Learn Vol'}
-                    </button>
+                >
+                  {isLearningVolume ? 'Cancel' : volumeMapping ? `CC${volumeMapping}` : 'Learn Vol'}
+                </button>
                     
                     {volumeMapping && !isLearningVolume && (
                       <button
-                        onClick={() => removeMidiMapping('volume')}
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevent any bubbling
+                          removeMidiMapping('volume');
+                      }}
                         className="px-1 py-0.5 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-                      >
-                        ×
-                      </button>
+                  >
+                    ×
+                  </button>
                     )}
                   </div>
                 </div>
                 
                 <input
-                  type="range"
-                  min="-60"
-                  max="0"
-                  step="0.1"
-                  value={source.volumeDb || -60}
-                  onChange={(e) => handleVolumeChange(source.name, parseFloat(e.target.value))}
-                  onMouseDown={() => handleSliderStart(source.name)}
-                  onMouseUp={handleSliderEnd}
-                  onTouchStart={() => handleSliderStart(source.name)}
-                  onTouchEnd={handleSliderEnd}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-                />
+                type="range"
+                min="-60"
+                max="0"
+                step="0.1"
+                value={source.volumeDb || -60}
+                onChange={(e) => handleVolumeChange(source.name, parseFloat(e.target.value))}
+                onMouseDown={(e) => {
+                  e.stopPropagation(); // Prevent drag events
+                  handleSliderStart(source.name);
+                }}
+                onMouseUp={(e) => {
+                    e.stopPropagation(); // Prevent drag events
+                handleSliderEnd();
+              }}
+              onTouchStart={(e) => {
+                e.stopPropagation(); // Prevent drag events
+                handleSliderStart(source.name);
+              }}
+              onTouchEnd={(e) => {
+                e.stopPropagation(); // Prevent drag events
+                handleSliderEnd();
+              }}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+            />
               </div>
 
               {/* Audio Level Meter - FIXED */}

@@ -26,7 +26,7 @@ import {
   Copy
 } from 'lucide-react';
 import configService from '../../services/configService';
-import enhancedGlobalStateService from '../../services/enhancedGlobalStateService';
+import globalStateService from '../../services/globalStateService';
 
 const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, performanceMode }) => {
   const [decks, setDecks] = useState({});
@@ -60,7 +60,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     console.log('Enhanced HotkeyDeckWidget: Initializing...');
     
     // Widget registration
-    enhancedGlobalStateService.registerDashboardWidget(
+    globalStateService.registerDashboardWidget(
       `hotkey-deck-${component.id}`, 
       'hotkey-deck', 
       { deckId: activeDeck }
@@ -79,18 +79,18 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
   }, [component.size]);
 
   const cleanup = () => {
-    enhancedGlobalStateService.unregisterDashboardWidget(`hotkey-deck-${component.id}`);
+    globalStateService.unregisterDashboardWidget(`hotkey-deck-${component.id}`);
     
     // Remove event listeners
-    enhancedGlobalStateService.off('obsStateChanged', handleOBSStateChange);
-    enhancedGlobalStateService.off('hotkeyMappingChanged', handleHotkeyMappingChanged);
-    enhancedGlobalStateService.off('midiMappingChanged', handleMIDIMappingChanged);
+    globalStateService.off('obsStateChanged', handleOBSStateChange);
+    globalStateService.off('hotkeyMappingChanged', handleHotkeyMappingChanged);
+    globalStateService.off('midiMappingChanged', handleMIDIMappingChanged);
   };
 
   const setupEventListeners = () => {
-    enhancedGlobalStateService.on('obsStateChanged', handleOBSStateChange);
-    enhancedGlobalStateService.on('hotkeyMappingChanged', handleHotkeyMappingChanged);
-    enhancedGlobalStateService.on('midiMappingChanged', handleMIDIMappingChanged);
+    globalStateService.on('obsStateChanged', handleOBSStateChange);
+    globalStateService.on('hotkeyMappingChanged', handleHotkeyMappingChanged);
+    globalStateService.on('midiMappingChanged', handleMIDIMappingChanged);
     
     // Listen for deck editor requests from dashboard
     const handleOpenDeckEditor = (event) => {
@@ -138,7 +138,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
       setObsData({
         scenes: obsDataCache.current.scenes,
         sources: obsDataCache.current.sources,
-        connected: enhancedGlobalStateService.isOBSConnected()
+        connected: globalStateService.isOBSConnected()
       });
       return;
     }
@@ -153,12 +153,12 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     try {
       console.log('Enhanced HotkeyDeckWidget: Loading fresh OBS data...');
       
-      const connected = enhancedGlobalStateService.isOBSConnected();
+      const connected = globalStateService.isOBSConnected();
       
       if (connected) {
         // Get cached data from enhanced service
-        const scenes = enhancedGlobalStateService.getOBSScenes();
-        const sources = enhancedGlobalStateService.getAudioSources();
+        const scenes = globalStateService.getOBSScenes();
+        const sources = globalStateService.getAudioSources();
         
         // Update cache
         obsDataCache.current = {
@@ -249,7 +249,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
 
     // Check for hotkey mapping
     const buttonKey = `${activeDeck}-${button.row || 0}-${button.col || 0}`;
-    const hotkeyMapping = enhancedGlobalStateService.getAllHotkeyMappings()[buttonKey];
+    const hotkeyMapping = globalStateService.getAllHotkeyMappings()[buttonKey];
     
     if (hotkeyMapping) {
       console.log('Enhanced HotkeyDeckWidget: Executing with hotkey mapping:', hotkeyMapping);
@@ -284,7 +284,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
       window.dispatchEvent(event);
     } else if (mapping.type === 'midi') {
       // Send MIDI command
-      enhancedGlobalStateService.setMIDIMapping(mapping.midiKey, mapping.midiData);
+      globalStateService.setMIDIMapping(mapping.midiKey, mapping.midiData);
     }
   };
 
@@ -299,7 +299,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     });
     window.dispatchEvent(event);
     
-    enhancedGlobalStateService.triggerCallbacks('hotkeyAction', {
+    globalStateService.triggerCallbacks('hotkeyAction', {
       action: button.action,
       target: button.target,
       customCommand: button.customCommand
@@ -310,7 +310,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     const volume = button.volumeValue || 64;
     const dbValue = ((volume / 127) * 60) - 60;
     
-    enhancedGlobalStateService.setVolume(button.target, dbValue, 'EnhancedHotkeyDeckWidget');
+    globalStateService.setVolume(button.target, dbValue, 'EnhancedHotkeyDeckWidget');
   };
 
   const executeNavigationAction = (button) => {
@@ -330,7 +330,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     }
 
     try {
-      const obsService = enhancedGlobalStateService.services.obs;
+      const obsService = globalStateService.services.obs;
       if (!obsService || !obsService.obs) {
         console.error('Enhanced HotkeyDeckWidget: OBS service not available');
         return;
@@ -384,7 +384,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     });
     window.dispatchEvent(event);
     
-    enhancedGlobalStateService.triggerCallbacks('obsAction', {
+    globalStateService.triggerCallbacks('obsAction', {
       action: button.action,
       target: button.obsScene || button.obsSource || button.target
     });
@@ -400,7 +400,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     });
     window.dispatchEvent(event);
     
-    enhancedGlobalStateService.triggerCallbacks('musicAction', {
+    globalStateService.triggerCallbacks('musicAction', {
       action: button.action,
       target: button.target
     });
@@ -476,7 +476,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     e.stopPropagation();
     
     // Clear any existing dashboard context menu
-    enhancedGlobalStateService.clearActiveContextMenu();
+    globalStateService.clearActiveContextMenu();
     
     const menuData = {
       x: e.clientX,
@@ -487,7 +487,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     };
     
     setContextMenu(menuData);
-    enhancedGlobalStateService.setActiveContextMenu('hotkeyDeckButton', menuData);
+    globalStateService.setActiveContextMenu('hotkeyDeckButton', menuData);
     
     console.log('Enhanced HotkeyDeckWidget: Button context menu:', `${row}-${col}`);
   };
@@ -502,7 +502,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     if (!mappingButton) return;
     
     const buttonKey = `${activeDeck}-${mappingButton.row}-${mappingButton.col}`;
-    enhancedGlobalStateService.setHotkeyMapping(buttonKey, {
+    globalStateService.setHotkeyMapping(buttonKey, {
       type: mappingData.type,
       keys: mappingData.keys,
       modifier: mappingData.modifier,
@@ -522,7 +522,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     if (!mappingButton) return;
     
     const buttonKey = `${activeDeck}-${mappingButton.row}-${mappingButton.col}`;
-    enhancedGlobalStateService.removeHotkeyMapping(buttonKey);
+    globalStateService.removeHotkeyMapping(buttonKey);
     
     setShowHotkeyMapper(false);
     setMappingButton(null);
@@ -535,7 +535,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
         setContextMenu(null);
         setShowDeckSelector(false);
         setShowHotkeyMapper(false);
-        enhancedGlobalStateService.clearActiveContextMenu();
+        globalStateService.clearActiveContextMenu();
       }
     };
 
@@ -556,7 +556,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
 
     // Check for hotkey mapping
     const hotkeyMappingKey = `${activeDeck}-${row}-${col}`;
-    const hasHotkeyMapping = enhancedGlobalStateService.getAllHotkeyMappings()[hotkeyMappingKey];
+    const hasHotkeyMapping = globalStateService.getAllHotkeyMappings()[hotkeyMappingKey];
 
     const getColorClasses = (color) => {
       const colorMap = {
@@ -743,7 +743,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
         style={{ left: contextMenu.x, top: contextMenu.y }}
         onMouseLeave={() => {
           setContextMenu(null);
-          enhancedGlobalStateService.clearActiveContextMenu();
+          globalStateService.clearActiveContextMenu();
         }}
       >
         {contextMenu.button && (
@@ -751,7 +751,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
             onClick={() => {
               executeButtonAction(contextMenu.button);
               setContextMenu(null);
-              enhancedGlobalStateService.clearActiveContextMenu();
+              globalStateService.clearActiveContextMenu();
             }}
             className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
           >
@@ -767,7 +767,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
             });
             window.dispatchEvent(event);
             setContextMenu(null);
-            enhancedGlobalStateService.clearActiveContextMenu();
+            globalStateService.clearActiveContextMenu();
           }}
           className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
         >
@@ -781,7 +781,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
               const [row, col] = contextMenu.buttonKey.split('-').map(Number);
               openHotkeyMapper(contextMenu.button, row, col);
               setContextMenu(null);
-              enhancedGlobalStateService.clearActiveContextMenu();
+              globalStateService.clearActiveContextMenu();
             }}
             className="w-full px-3 py-2 text-left text-white hover:bg-gray-700 flex items-center space-x-2"
           >
@@ -881,7 +881,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
     configured: Object.values(currentDeck.buttons || {}).filter(btn => btn.type !== 'empty').length
   } : { total: 0, configured: 0 };
 
-  const hotkeyMappingCount = Object.keys(enhancedGlobalStateService.getAllHotkeyMappings()).filter(
+  const hotkeyMappingCount = Object.keys(globalStateService.getAllHotkeyMappings()).filter(
     key => key.startsWith(activeDeck)
   ).length;
 
@@ -893,7 +893,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
         if (editMode) {
           e.preventDefault();
           e.stopPropagation();
-          enhancedGlobalStateService.clearActiveContextMenu();
+          globalStateService.clearActiveContextMenu();
           
           const menuData = {
             x: e.clientX,
@@ -902,7 +902,7 @@ const EnhancedHotkeyDeckWidget = ({ component, editMode, onUpdate, onRemove, per
           };
           
           setContextMenu(menuData);
-          enhancedGlobalStateService.setActiveContextMenu('hotkeyDeckWidget', menuData);
+          globalStateService.setActiveContextMenu('hotkeyDeckWidget', menuData);
         }
       }}
     >
