@@ -251,11 +251,11 @@ const EnhancedAudioMixer = () => {
   const handleMIDILearningCompleted = useCallback((data) => {
     console.log('🎯 EnhancedAudioMixer: MIDI Learning completed callback:', data);
     
-    // 🔥 FIX: Store current learning state before it gets cleared by race condition
-    const currentLearningState = learningMidi;
-    
-    if (currentLearningState) {
-      const { sourceName, type } = currentLearningState;
+    // 🔥 FIX: Use target from callback data instead of local state
+    const targetParts = data.target.split('_');
+    if (targetParts.length >= 3 && targetParts[0] === 'EnhancedAudioMixer') {
+      const sourceName = targetParts.slice(1, -1).join('_'); // Handle source names with underscores
+      const type = targetParts[targetParts.length - 1];
       const midiKey = data.message.note.toString();
       
       console.log('🎯 EnhancedAudioMixer: Processing learning for:', {
@@ -300,18 +300,6 @@ const EnhancedAudioMixer = () => {
         // 🔥 CRITICAL: Save with correct source to ensure sync
         globalStateService.setMIDIMapping(midiKey, mapping, 'EnhancedAudioMixer');
         
-        // 🔥 CRITICAL: Force sync to MIDI service immediately
-        if (globalStateService.services.midi) {
-          try {
-            globalStateService.services.midi.setMapping(midiKey, mapping);
-            console.log('✅ EnhancedAudioMixer: MIDI mapping synced to service successfully');
-          } catch (error) {
-            console.error('❌ EnhancedAudioMixer: Failed to sync mapping to MIDI service:', error);
-          }
-        } else {
-          console.warn('⚠️ EnhancedAudioMixer: MIDI service not available for direct sync');
-        }
-        
         console.log('✅ EnhancedAudioMixer: MIDI learning completed for', sourceName, type, '-> CC' + midiKey);
         
         // Show success notification
@@ -322,14 +310,13 @@ const EnhancedAudioMixer = () => {
         console.error('❌ EnhancedAudioMixer: Failed to create mapping for type:', type);
       }
       
-      // 🔥 FIX: Clear learning state AND stop MIDI learning AFTER processing is complete
+      // 🔥 FIX: Clear learning state AFTER processing is complete
       setLearningMidi(null);
-      globalStateService.stopMIDILearning();
       
     } else {
-      console.warn('⚠️ EnhancedAudioMixer: MIDI learning completed but no learning state found - this should not happen anymore');
+      console.log('📝 EnhancedAudioMixer: MIDI learning completed for different component:', data.target);
     }
-  }, [learningMidi]);
+  }, []);
 
   const handleMIDILearningStopped = useCallback(() => {
     setLearningMidi(null);

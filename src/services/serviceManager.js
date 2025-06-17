@@ -145,36 +145,21 @@ class ServiceManager {
   }
 
   setupMIDILearning() {
-    // Connect MIDI learning with GlobalStateService
+    // 🔥 ENHANCED: Connect MIDI learning with GlobalStateService
     midiService.addCallback('midiLearning', (midiMessage) => {
-      console.log('🎯 MIDI Learning message received in ServiceManager:', midiMessage);
+      console.log('🎯 ServiceManager: MIDI Learning message received:', midiMessage);
       
-      // Get the current learning target from global state
-      const learningTarget = globalStateService.getMIDIState().learningTarget;
+      // Use the new centralized learning completion handler
+      const result = globalStateService.handleMIDILearningCompleted(midiMessage);
       
-      if (learningTarget) {
-        console.log('🎯 MIDI Learning completed for target:', learningTarget);
-        
-        // Trigger the global state callback
-        globalStateService.triggerCallbacks('midiLearningCompleted', {
-          target: learningTarget,
-          message: midiMessage
-        });
-        
-        // Update MIDI state to stop learning
-        globalStateService.updateMIDIState({
-          learning: false,
-          learningTarget: null,
-          lastActivity: { ...midiMessage, timestamp: Date.now() }
-        });
-        
-        console.log('✅ MIDI Learning process completed in ServiceManager');
+      if (result) {
+        console.log('✅ ServiceManager: MIDI Learning process completed successfully');
       } else {
-        console.warn('⚠️ MIDI Learning completed but no target found');
+        console.warn('⚠️ ServiceManager: MIDI Learning completion failed');
       }
     });
     
-    console.log('🎯 MIDI Learning integration setup completed');
+    console.log('🎯 ServiceManager: Enhanced MIDI Learning integration setup completed');
   }
 
   async initializeAudioDeckService() {
@@ -199,53 +184,16 @@ class ServiceManager {
   }
 
   setupServiceCommunication() {
-    // 🎹 Enhanced MIDI Learning Integration
-    globalStateService.startMIDILearning = (target) => {
-      console.log('🎹 GlobalStateService.startMIDILearning called for:', target);
-      
-      if (midiService && this.serviceStates.midi) {
-        // Update state first
-        globalStateService.updateMIDIState({
-          learning: true,
-          learningTarget: target
-        });
-        
-        // Start MIDI learning - let ServiceManager handle the callback
-        const success = midiService.startLearning();
-        
-        if (success) {
-          console.log('✅ MIDI Learning started successfully for:', target);
-        } else {
-          console.error('❌ Failed to start MIDI Learning for:', target);
-          globalStateService.updateMIDIState({
-            learning: false,
-            learningTarget: null
-          });
-        }
-        
-        return success;
-      } else {
-        console.error('❌ MIDI Service not available for learning');
-        return false;
-      }
-    };
-    
-    globalStateService.stopMIDILearning = () => {
-      console.log('🛑 GlobalStateService.stopMIDILearning called');
-      
-      if (midiService && this.serviceStates.midi) {
-        midiService.stopLearning();
-      }
-      
-      globalStateService.updateMIDIState({
-        learning: false,
-        learningTarget: null
-      });
-      
-      globalStateService.triggerCallbacks('midiLearningStopped');
-    };
+    // 🎹 ENHANCED: MIDI Learning Integration - now uses centralized methods
+    // Note: MIDI learning methods are now built into GlobalStateService
+    // No need to override them here anymore
     
     console.log('🔗 Enhanced Service communication setup completed');
+    console.log('📋 Available MIDI learning methods:', {
+      startMIDILearning: typeof globalStateService.startMIDILearning,
+      stopMIDILearning: typeof globalStateService.stopMIDILearning,
+      handleMIDILearningCompleted: typeof globalStateService.handleMIDILearningCompleted
+    });
   }
 
   handleMIDIHotkey(data) {
