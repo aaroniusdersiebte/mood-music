@@ -224,6 +224,8 @@ class MIDIServiceSafe {
           }
         }
         
+        // 🔥 FIX: Don't auto-stop here, let the UI component handle stopping after processing
+        console.log('✅ MIDI Learning message processed, waiting for UI to complete processing');
         return; // Don't process as normal mapping during learning
       } else {
         console.log('MIDI Service: Ignoring message type for learning:', midiMessage.type);

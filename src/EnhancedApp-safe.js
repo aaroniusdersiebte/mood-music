@@ -2,17 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Import stores and services (with error handling)
-let useMoodStore, audioService, obsWebSocketService, midiService, globalStateService, configService, audioDeckService, fileUtils;
+let useMoodStore, audioService, globalStateService, configService, audioDeckService, fileUtils, serviceManager;
 
 try {
   useMoodStore = require('./stores/moodStore').default;
   audioService = require('./services/audioService').default;
-  obsWebSocketService = require('./services/obsWebSocketService').default;
-  midiService = require('./services/midiService').default;
   globalStateService = require('./services/globalStateService').default;
   configService = require('./services/configService').default;
   audioDeckService = require('./services/audioDeckService').default;
   fileUtils = require('./utils/fileUtils').default;
+  serviceManager = require('./services/serviceManager').default;
 } catch (error) {
   console.error('EnhancedApp: Import error:', error);
 }
@@ -35,6 +34,17 @@ try {
 
 // Import styles
 import './App.css';
+
+// Load diagnostic script as a module
+try {
+  import('./utils/diagnosticScript').then((diagnostic) => {
+    window.diagnosticScript = diagnostic.default || diagnostic;
+    console.log('🔧 Audio Mixer Diagnostic Tool loaded!');
+    console.log('🚀 Usage: diagnosticScript.runFullDiagnosis()');
+  });
+} catch (error) {
+  console.log('Diagnostic script not available');
+}
 
 function App() {
   // Basic state management
@@ -91,12 +101,39 @@ function App() {
         console.log('EnhancedApp: Starting initialization...');
         setInitializationProgress({ step: 'Initializing services...', progress: 10 });
         
+        // Initialize ServiceManager first - this will setup all services properly
+        if (serviceManager) {
+          console.log('🚀 Initializing ServiceManager...');
+          const serviceInitSuccess = await serviceManager.initializeAllServices();
+          if (!serviceInitSuccess) {
+            console.warn('⚠️ Some services failed to initialize, continuing anyway...');
+          }
+        }
+        
         // Make services globally available
         if (globalStateService) window.globalStateService = globalStateService;
         if (configService) window.configService = configService;
         if (audioDeckService) window.audioDeckService = audioDeckService;
         if (useMoodStore) window.useMoodStore = useMoodStore;
-        if (obsWebSocketService) window.obsWebSocketService = obsWebSocketService;
+        if (serviceManager) window.serviceManager = serviceManager;
+        
+        // Load diagnostic script
+        try {
+          const diagnosticScript = require('./utils/diagnosticScript').default;
+          window.diagnosticScript = diagnosticScript;
+          console.log('🔧 Diagnostic script loaded - use diagnosticScript.runFullDiagnosis() in console');
+        } catch (error) {
+          console.warn('Diagnostic script not available:', error.message);
+        }
+        
+        // Load emergency repair tool
+        try {
+          const emergencyRepair = require('./utils/emergencyRepair').default;
+          window.emergencyRepair = emergencyRepair;
+          console.log('🚑 Emergency repair tool loaded - use emergencyRepair.fixEverything() in console');
+        } catch (error) {
+          console.warn('Emergency repair tool not available:', error.message);
+        }
         
         setInitializationProgress({ step: 'Loading configuration...', progress: 30 });
         
@@ -109,19 +146,32 @@ function App() {
           await audioDeckService.initializeService();
         }
         
-        setInitializationProgress({ step: 'Setting up directories...', progress: 50 });
+        setInitializationProgress({ step: 'Connecting services...', progress: 50 });
+        
+        // Setup connection status monitoring
+        if (globalStateService) {
+          globalStateService.on('obsStateChanged', (state) => {
+            setConnectionStatus(prev => ({ ...prev, obs: state.connected }));
+          });
+          
+          globalStateService.on('midiStateChanged', (state) => {
+            setConnectionStatus(prev => ({ ...prev, midi: state.connected }));
+          });
+        }
+        
+        setInitializationProgress({ step: 'Setting up directories...', progress: 60 });
         
         if (fileUtils && fileUtils.ensureDataDirectories) {
           await fileUtils.ensureDataDirectories();
         }
         
-        setInitializationProgress({ step: 'Loading mappings...', progress: 70 });
+        setInitializationProgress({ step: 'Loading mappings...', progress: 80 });
         
         if (globalStateService && globalStateService.loadMappings) {
           globalStateService.loadMappings();
         }
         
-        setInitializationProgress({ step: 'Completing setup...', progress: 90 });
+        setInitializationProgress({ step: 'Completing setup...', progress: 95 });
         
         // Basic audio service setup
         if (audioService) {

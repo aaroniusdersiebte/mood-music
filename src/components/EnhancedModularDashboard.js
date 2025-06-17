@@ -31,7 +31,7 @@ import {
 import configService from '../services/configService';
 import globalStateService from '../services/globalStateService';
 import MoodSelectorWidget from './dashboard/MoodSelectorWidget';
-import UnifiedAudioMixerWidget from './dashboard/UnifiedAudioMixerWidget';
+// import UnifiedAudioMixerWidget from './dashboard/UnifiedAudioMixerWidget'; // DISABLED - see SYSTEM_VOLLSTÄNDIG_REPARIERT.md
 import AudioDeckWidget from './dashboard/AudioDeckWidget';
 import EnhancedHotkeyDeckWidget from './dashboard/EnhancedHotkeyDeckWidget';
 import DashboardDeckEditor from './dashboard/DashboardDeckEditor';
@@ -297,6 +297,7 @@ const EnhancedModularDashboard = () => {
     const deck = audioDeckService.getDeck(deckId);
     if (!deck) {
       console.error('Unified ModularDashboard: Audio deck not found:', deckId);
+      console.log('Available decks:', audioDeckService.getAllDecks().map(d => ({ id: d.id, name: d.name })));
       alert(`❌ Audio deck not found: ${deckId}`);
       return;
     }
@@ -337,6 +338,7 @@ const EnhancedModularDashboard = () => {
     addComponentToLayout(newComponent);
     
     console.log('✅ Unified ModularDashboard: AudioDeck widget added successfully:', deck.name);
+    alert(`✅ Audio Deck "${deck.name}" added to dashboard!`);
   }, [dashboardLayout]);
 
   const handleWindowResize = useCallback(() => {
@@ -631,20 +633,50 @@ const EnhancedModularDashboard = () => {
   };
 
   const getAvailableAudioDeckId = () => {
+    // Force initialization of audio deck service if needed
+    if (!audioDeckService.initialized) {
+      console.log('Unified ModularDashboard: AudioDeckService not initialized, waiting...');
+      return 'main-output'; // fallback
+    }
+    
     const audioDecks = audioDeckService.getAllDecks();
+    console.log('Unified ModularDashboard: Available audio decks:', audioDecks.length, audioDecks.map(d => d.name));
+    
     if (audioDecks.length > 0) {
       return audioDecks[0].id;
     }
     
-    // Create a default audio deck if none exist
-    const defaultDeck = audioDeckService.createAudioDeck({
-      name: 'Main Audio',
-      description: 'Default audio deck',
-      color: 'cyan',
-      orientation: 'vertical'
-    });
+    // Create default audio decks if none exist
+    console.log('Unified ModularDashboard: Creating default audio decks...');
     
-    return defaultDeck.id;
+    const defaultDecks = [
+      {
+        name: 'Main Output',
+        description: 'Primary audio output sources',
+        color: 'green',
+        orientation: 'vertical'
+      },
+      {
+        name: 'Microphones',
+        description: 'All microphone inputs',
+        color: 'blue',
+        orientation: 'vertical'
+      },
+      {
+        name: 'Media Sources',
+        description: 'Music, game audio, and media',
+        color: 'purple',
+        orientation: 'vertical'
+      }
+    ];
+    
+    const createdDecks = defaultDecks.map(deckData => 
+      audioDeckService.createAudioDeck(deckData)
+    );
+    
+    console.log('Unified ModularDashboard: Created', createdDecks.length, 'default audio decks');
+    
+    return createdDecks[0].id;
   };
 
   const snapToGridPosition = (position) => {
@@ -895,8 +927,10 @@ const EnhancedModularDashboard = () => {
       case 'mood-selector':
         return <MoodSelectorWidget {...commonProps} />;
       case 'audio-mixer':
+        // UnifiedAudioMixerWidget is disabled - see SYSTEM_VOLLSTÄNDIG_REPARIERT.md
+        // Use AudioDeckWidget as replacement for now
         return component.enhanced ? 
-          <UnifiedAudioMixerWidget {...commonProps} /> : 
+          <AudioDeckWidget {...commonProps} /> : 
           <MoodSelectorWidget {...commonProps} />; // Fallback
       case 'audio-deck':
         return component.enhanced ? 
@@ -944,6 +978,109 @@ const EnhancedModularDashboard = () => {
             </div>
 
             {/* Widget Categories */}
+            {/* Audio Deck Selection */}
+            <div className="mb-6">
+              <h4 className="text-lg font-medium text-white mb-3 flex items-center space-x-2">
+                <Layers className="w-5 h-5 text-cyan-400" />
+                <span>Audio Decks</span>
+              </h4>
+              
+              <div className="space-y-3">
+                {(() => {
+                  const audioDecks = audioDeckService.getAllDecks();
+                  if (audioDecks.length === 0) {
+                    return (
+                      <div className="p-4 bg-gray-700 border border-gray-600 rounded-lg text-center">
+                        <p className="text-gray-400 text-sm mb-3">No audio decks available</p>
+                        <button
+                          onClick={() => {
+                            // Initialize default decks
+                            getAvailableAudioDeckId();
+                            // Refresh the palette
+                            setTimeout(() => setShowComponentPalette(false), 100);
+                            setTimeout(() => setShowComponentPalette(true), 200);
+                          }}
+                          className="px-3 py-1 bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 rounded text-sm transition-colors"
+                        >
+                          Create Default Audio Decks
+                        </button>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {audioDecks.map((deck) => {
+                        const existingWidget = dashboardLayout.layout.components.find(
+                          comp => comp.type === 'audio-deck' && comp.deckId === deck.id
+                        );
+                        
+                        return (
+                          <motion.button
+                            key={deck.id}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => {
+                              if (existingWidget) {
+                                alert(`⚠️ Audio Deck "${deck.name}" is already on the dashboard!`);
+                                return;
+                              }
+                              
+                              const newComponent = {
+                                id: `audio-deck-${deck.id}-${Date.now()}`,
+                                type: 'audio-deck',
+                                position: findFreePosition({ width: 280, height: 400 }),
+                                size: { width: 280, height: 400 },
+                                visible: true,
+                                locked: false,
+                                zIndex: getHighestZIndex() + 1,
+                                deckId: deck.id,
+                                orientation: deck.orientation || 'vertical',
+                                showMeters: deck.showMeters !== false,
+                                deckName: deck.name,
+                                deckColor: deck.color || 'cyan',
+                                enhanced: true,
+                                created: Date.now()
+                              };
+                              
+                              addComponentToLayout(newComponent);
+                              setShowComponentPalette(false);
+                            }}
+                            disabled={existingWidget}
+                            className={`p-3 border rounded-lg text-left transition-all ${
+                              existingWidget
+                                ? 'bg-gray-600 border-gray-500 cursor-not-allowed opacity-50'
+                                : 'bg-gray-700 hover:bg-gray-600 border-gray-600'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2 mb-2">
+                              <Volume2 className={`w-5 h-5 text-${deck.color || 'cyan'}-400`} />
+                              <h5 className="font-medium text-white">{deck.name}</h5>
+                              {existingWidget && (
+                                <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded">On Dashboard</span>
+                              )}
+                            </div>
+                            
+                            <p className="text-xs text-gray-400 mb-2">
+                              {deck.description || 'Audio source deck'}
+                            </p>
+                            
+                            <div className="flex items-center justify-between text-xs text-gray-500">
+                              <span>{deck.sources?.length || 0} sources</span>
+                              <span className={`text-${deck.color || 'cyan'}-400`}>
+                                {deck.orientation || 'vertical'}
+                              </span>
+                            </div>
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+            
+            {/* Standard Widget Categories */}
             {Object.entries(
               availableWidgets.reduce((acc, widget) => {
                 if (!acc[widget.category]) acc[widget.category] = [];
@@ -958,7 +1095,7 @@ const EnhancedModularDashboard = () => {
                 </h4>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {widgets.map((widget) => (
+                  {widgets.filter(widget => widget.type !== 'audio-deck').map((widget) => (
                     <motion.button
                       key={widget.type}
                       whileHover={{ scale: 1.02 }}
@@ -1170,6 +1307,29 @@ const EnhancedModularDashboard = () => {
           >
             <Plus className="w-4 h-4 inline mr-1" />
             Add Widget
+          </button>
+
+          {/* Quick Add Audio Deck Button for Testing */}
+          <button
+            onClick={() => {
+              const decks = audioDeckService.getAllDecks();
+              if (decks.length > 0) {
+                const testDeck = decks[0];
+                handleAddAudioDeckWidget({
+                  detail: {
+                    deckId: testDeck.id,
+                    deckName: testDeck.name,
+                    deckColor: testDeck.color
+                  }
+                });
+              } else {
+                alert('No audio decks available. Create some first!');
+              }
+            }}
+            className="px-3 py-2 bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 rounded-lg text-sm font-medium transition-colors"
+          >
+            <Layers className="w-4 h-4 inline mr-1" />
+            Test Add Deck
           </button>
 
           <button

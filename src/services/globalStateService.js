@@ -361,18 +361,25 @@ class GlobalStateService {
     const stringKey = key.toString();
     this.states.mappings.midi.set(stringKey, { ...mapping, source });
     
-    console.log(`Unified GlobalStateService: MIDI mapping set: ${stringKey}`, mapping, `(source: ${source})`);
+    console.log(`🎹 Unified GlobalStateService: MIDI mapping set: ${stringKey}`, mapping, `(source: ${source})`);
     
-    // Only update the MIDI service if this didn't come from the MIDI service
-    if (this.services.midi && source !== 'MIDIService') {
+    // 🔥 CRITICAL: Always sync to MIDI service, regardless of source
+    if (this.services.midi) {
       try {
         // Remove the 'source' property before passing to MIDI service
         const { source: _, ...cleanMapping } = { ...mapping, source };
         this.services.midi.setMapping(stringKey, cleanMapping);
-        console.log(`Unified GlobalStateService: Synced new mapping ${stringKey} to MIDI service`);
+        console.log(`✅ Unified GlobalStateService: Synced mapping ${stringKey} to MIDI service successfully`);
+        
+        // 💾 Save mappings to storage immediately
+        this.services.midi.saveMappingsToStorage();
+        console.log(`💾 Unified GlobalStateService: MIDI mappings saved to storage`);
+        
       } catch (error) {
-        console.error(`Unified GlobalStateService: Failed to sync mapping ${stringKey} to MIDI service:`, error);
+        console.error(`❌ Unified GlobalStateService: Failed to sync mapping ${stringKey} to MIDI service:`, error);
       }
+    } else {
+      console.warn(`⚠️ Unified GlobalStateService: MIDI service not available, mapping saved to global state only`);
     }
     
     this.triggerCallbacks('midiMappingChanged', { key: stringKey, mapping: { ...mapping, source }, source });

@@ -417,7 +417,8 @@ class AudioDeckService {
   // Event handlers for OBS state changes
   handleOBSStateChange(state) {
     if (state.connected && state.sources) {
-      console.log('AudioDeckService: OBS connected, updating source assignments');
+      // Disabled frequent logging - only log on significant changes
+      // console.log('AudioDeckService: OBS connected, updating source assignments');
       
       // Filter audio sources
       const audioSources = state.sources.filter(source => {
