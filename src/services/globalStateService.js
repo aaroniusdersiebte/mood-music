@@ -492,48 +492,100 @@ class GlobalStateService {
     return sourceName; // Fallback to original name
   }
 
-  // MIDI Learning Management (Central)
-  startMIDILearning(target, callback) {
-    console.log(`Unified GlobalStateService: Starting MIDI learning for: ${target}`);
+  // ===== ENHANCED MIDI LEARNING MANAGEMENT =====
+  // 🔥 FIXED: Centralized learning state to prevent race conditions
+  
+  startMIDILearning(target, callback = null) {
+    console.log(`🎯 GlobalStateService: Starting MIDI learning for: ${target}`);
     
+    // 🔥 Check if already learning
+    if (this.states.midi.learning) {
+      console.warn(`⚠️ GlobalStateService: MIDI learning already in progress for: ${this.states.midi.learningTarget}`);
+      // Stop existing learning first
+      this.stopMIDILearning();
+      // Wait a moment before starting new learning
+      setTimeout(() => this.startMIDILearning(target, callback), 100);
+      return false;
+    }
+    
+    // Update state immediately to prevent race conditions
     this.updateMIDIState({
       learning: true,
       learningTarget: target
     });
 
     if (this.services.midi) {
-      return this.services.midi.startLearning((message) => {
-        console.log('Unified GlobalStateService: MIDI learning completed:', message);
-        
+      const success = this.services.midi.startLearning();
+      if (success) {
+        console.log(`✅ GlobalStateService: MIDI learning started successfully for: ${target}`);
+        return true;
+      } else {
+        console.error(`❌ GlobalStateService: Failed to start MIDI learning for: ${target}`);
+        // Reset state on failure
         this.updateMIDIState({
           learning: false,
           learningTarget: null
         });
-        
-        if (callback) {
-          callback(message);
-        }
-        
-        this.triggerCallbacks('midiLearningCompleted', { target, message });
+        return false;
+      }
+    } else {
+      console.error('❌ GlobalStateService: MIDI service not available');
+      // Reset state if service not available
+      this.updateMIDIState({
+        learning: false,
+        learningTarget: null
       });
+      return false;
     }
-    
-    return false;
   }
 
   stopMIDILearning() {
-    console.log('Unified GlobalStateService: Stopping MIDI learning');
+    console.log('🛑 GlobalStateService: Stopping MIDI learning');
     
+    // Update state first
     this.updateMIDIState({
       learning: false,
       learningTarget: null
     });
 
+    // Then stop service
     if (this.services.midi) {
       this.services.midi.stopLearning();
     }
     
+    // Trigger callbacks
     this.triggerCallbacks('midiLearningStopped');
+  }
+  
+  // 🔥 NEW: Enhanced MIDI learning completion handler
+  handleMIDILearningCompleted(midiMessage) {
+    const currentTarget = this.states.midi.learningTarget;
+    
+    if (!currentTarget) {
+      console.warn('⚠️ GlobalStateService: MIDI learning completed but no target found');
+      return;
+    }
+    
+    console.log(`🎯 GlobalStateService: MIDI learning completed for: ${currentTarget}`, midiMessage);
+    
+    // Store the current target before clearing state
+    const targetInfo = {
+      target: currentTarget,
+      message: midiMessage,
+      timestamp: Date.now()
+    };
+    
+    // Clear learning state immediately
+    this.updateMIDIState({
+      learning: false,
+      learningTarget: null,
+      lastActivity: midiMessage
+    });
+    
+    // Trigger callbacks with target info
+    this.triggerCallbacks('midiLearningCompleted', targetInfo);
+    
+    return targetInfo;
   }
 
   // Volume Control (Central)
